@@ -3,43 +3,51 @@
 NIP-600 fidelity bond certificate service.
 
 This service sells encrypted fidelity bond certificates backed by Bitcoin
-timelocked UTXOs. It exposes a FastAPI API for listing bond tiers, creating
-Lightning invoices through LNbits, monitoring funded bond pools, and releasing
-certificate material after payment.
+timelocked UTXOs. It exposes a FastAPI HTTP API for listing available bonds,
+creating Lightning invoices through LNbits, and releasing certificate material
+after payment.
 
 ## What It Does
 
 - Derives BIP46 timelocked P2WSH addresses from a service HD wallet.
-- Groups funded timelocked UTXOs into reusable bond pools.
-- Lets admins create tiers and pools, then fund or record pool UTXOs.
+- Lets admins create bonds directly, each backed by a single timelocked UTXO
+  with a configurable number of slots.
 - Lets users request a certificate slot for a Nostr public key.
-- Creates an LNbits invoice with a custom Lightning preimage.
+- Creates an LNbits invoice using a freshly generated Lightning preimage.
 - Encrypts certificate data with AES-256-GCM using that preimage as the key.
-- Marks orders paid from an LNbits webhook and then exposes the encrypted
-  certificate for client-side decryption.
+- Marks orders paid from an LNbits webhook and exposes the encrypted certificate
+  for client-side decryption.
 
-The encrypted certificate can be delivered together with the invoice because
-only the payer receives the Lightning payment preimage needed to decrypt it. The
-service does not sign or publish Nostr events for users. After payment, the user
-copies the Lightning payment preimage from their wallet into the browser. The
-browser decrypts the returned certificate material locally, then the user can
-publish their own NIP-600 event.
+The encrypted certificate is safe to return with the invoice because only the
+payer receives the Lightning payment preimage needed to decrypt it. After
+payment, the user copies the preimage from their wallet into the browser. The
+browser decrypts the certificate locally, then the user can publish their own
+NIP-600 event.
 
 ## Repository Layout
 
 ```text
 app/
-  main.py              FastAPI app, routing, startup jobs
+  main.py              FastAPI app, routing, startup job
   config.py            Environment-based settings
   database.py          Async SQLAlchemy engine/session setup
-  models.py            SQLAlchemy models and order/pool states
+  models.py            SQLAlchemy models (Bond, BondOrder)
   repository.py        Database access layer
-  endpoints/           Public, admin, and webhook HTTP routes
-  services/            Bond orchestration plus LNbits, Bitcoin RPC, and electrs clients
-  crypto/              BIP46, certificate signing, AES, and Nostr helpers
+  endpoints/
+    admin.py           Admin CRUD for bonds and orders
+    bond.py            Public bond request and status endpoints
+    tiers.py           Public bond listing endpoint
+    lnurl.py           LNURL-pay and Lightning address endpoints
+    webhook.py         LNbits payment webhook
+  services/
+    bond.py            Bond and order orchestration
+    lnbits.py          LNbits HTTP client
+  crypto/
+    bip46.py           BIP46 timelocked address derivation
+    certificate.py     NIP-600 certificate signing
+    aes.py             AES-256-GCM (cert storage) and LUD-10 AES-CBC helpers
+    nostr.py           Nostr pubkey normalization
 tests/                 BIP46, certificate, AES, and Nostr helper tests
-Dockerfile             uv-based Python 3.12 image
-docker-compose.yml     Single-service compose setup with persistent ./data
 pyproject.toml         Python project metadata and dependencies
 ```
 
@@ -47,10 +55,8 @@ pyproject.toml         Python project metadata and dependencies
 
 - Python 3.12+
 - `uv`
-- SQLite by default, or any SQLAlchemy async database URL you configure
+- SQLite by default, or any SQLAlchemy async-compatible database URL
 - LNbits wallet with invoice API access
-- Bitcoin Core wallet RPC, if using automatic pool funding
-- Electrs/Esplora-compatible HTTP endpoint for UTXO discovery and confirmation
 
 ## Configuration
 
@@ -64,13 +70,6 @@ LNBITS_URL=https://lnbits.example.com
 LNBITS_INVOICE_KEY=...
 LNBITS_WEBHOOK_SECRET=...
 
-BITCOIN_RPC_URL=http://127.0.0.1:8332
-BITCOIN_RPC_USER=...
-BITCOIN_RPC_PASSWORD=...
-BITCOIN_RPC_WALLET=timelock
-
-ELECTRS_URL=https://mempool.space/api
-
 ADMIN_API_KEY=change-me
 PREIMAGE_ENCRYPTION_KEY=64_hex_chars_for_32_bytes
 
@@ -78,159 +77,95 @@ DATABASE_URL=sqlite+aiosqlite:///./data/timelock.db
 DEFAULT_FEE_RATE=0.10
 INVOICE_EXPIRY_SECONDS=3600
 MIN_BOND_SATS=100000
-UTXO_MIN_CONFIRMATIONS=1
 SERVICE_BASE_URL=https://timelock.example.com
 ```
 
-Important notes:
+Notes:
 
-- `BITCOIN_RPC_*` settings are only required when using the admin auto-funding
-  endpoint. Pools can still be funded externally and recorded with
-  `/record-utxo`.
-- `PREIMAGE_ENCRYPTION_KEY` must be 64 hex characters. It is used to encrypt
+- `PREIMAGE_ENCRYPTION_KEY` must be 64 hex characters (32 bytes). It encrypts
   stored Lightning preimages at rest.
-- `SERVICE_BASE_URL` is used to build the LNbits payment webhook URL:
-  `/api/v1/webhook/payment`.
-- The default database path writes to `./data/timelock.db`.
-- The app creates tables on startup. There are no migrations in this repo yet.
+- `SERVICE_BASE_URL` is used to build the LNbits payment webhook URL
+  (`/api/v1/webhook/payment`) and Lightning-address identifiers.
+- The app creates tables on startup. There are no migrations.
 
 ## Local Development
 
-Install dependencies:
-
 ```bash
 uv sync --extra dev
-```
-
-Run the API:
-
-```bash
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Check health:
-
-```bash
-curl http://localhost:8000/health
-```
-
-Interactive API docs are available at:
-
-```text
-http://localhost:8000/docs
-```
-
-## Docker
-
-Build and run with compose:
-
-```bash
-docker compose up --build
-```
-
-The compose file publishes the service on host port `8001` and stores the
-SQLite database under `./data`.
-
-```bash
-curl http://localhost:8001/health
-```
+Interactive API docs: `http://localhost:8000/docs`
 
 ## API Overview
 
 ### Public Endpoints
 
-List active tiers and available slots:
+List bonds available for purchase:
 
 ```bash
-curl http://localhost:8000/api/v1/tiers
+curl http://localhost:8000/api/v1/bonds
 ```
 
-Create a bond order:
+Request a certificate slot:
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/bond/request \
   -H 'Content-Type: application/json' \
-  -d '{
-    "tier_id": "tier-uuid",
-    "npub": "npub1..."
-  }'
+  -d '{"bond_id": "bond-uuid", "npub": "npub1..."}'
 ```
 
-The response includes:
+Response fields:
 
-- `invoice`: Lightning invoice to pay.
-- `lnurl`: bech32-encoded LNURL-pay link for wallets that support LNURL.
-- `lnurl_pay_url`: raw LNURL-pay endpoint URL.
-- `lightning_address`: Lightning-address-style identifier for this order, when
-  `SERVICE_BASE_URL` has a host.
-- `payment_hash`: LNbits payment hash/checking ID.
-- `encrypted_cert` and `cert_nonce`: encrypted certificate material delivered
-  with the invoice. It is safe to expose before payment because the decryption
-  key is the Lightning payment preimage.
-- `timelocked_address` and `bond_expiry`: bond pool address and expiry.
+- `invoice` — Lightning invoice to pay
+- `lnurl` — bech32 LNURL-pay link for wallets that support LNURL
+- `lnurl_pay_url` — raw LNURL-pay endpoint URL
+- `lightning_address` — Lightning-address identifier for this order
+- `payment_hash` — LNbits payment hash / checking ID
+- `encrypted_cert`, `cert_nonce` — encrypted certificate delivered with the
+  invoice (safe to return pre-payment; decryption requires the preimage)
+- `timelocked_address`, `bond_expiry` — BIP46 address and UNIX expiry timestamp
 
 Poll order status:
 
 ```bash
-curl http://localhost:8000/api/v1/bond/order-uuid
+curl http://localhost:8000/api/v1/bond/{order_id}
 ```
 
-When `state` is `PAID`, the browser should ask the user for the Lightning
-payment preimage from their wallet. Decrypt `encrypted_cert` locally with
-AES-256-GCM using that preimage as the 32-byte key and `cert_nonce` as the
-nonce.
+When `state` is `PAID`, ask the user for the Lightning payment preimage from
+their wallet. Decrypt `encrypted_cert` with AES-256-GCM using the preimage as
+the 32-byte key and `cert_nonce` as the nonce. The decrypted JSON contains
+`bond_sig`, `xpub`, `utxo`, `timelock_index`, and `expiry` — the fields needed
+to assemble and publish the NIP-600 event.
 
-The decrypted payload contains the fields needed to assemble the NIP-600 event,
-including `bond_sig`, `xpub`, `utxo`, `timelock_index`, and `expiry`. The user
-then signs and publishes that event with their own Nostr key.
+### LNURL / Lightning Address Flow
 
-## LNURL Delivery
-
-A bond can also be exposed as an LNURL-pay link or Lightning address flow. In
-that model, the wallet pays the order invoice through an LNURL callback and
-receives the encrypted certificate through a LUD-10 `successAction`.
-
-The service exposes:
+A bond order can also be paid through an LNURL-pay or Lightning address flow.
+The wallet receives the encrypted certificate through a LUD-10 `successAction`
+(AES-256-CBC, payment preimage as key).
 
 ```text
-GET /api/v1/lnurlp/{order_id}
-GET /.well-known/lnurlp/{order_id}
-GET /api/v1/lnurlp/{order_id}/callback?amount={msat}
+GET  /api/v1/lnurlp/{order_id}            LNURL payRequest metadata
+GET  /.well-known/lnurlp/{order_id}       Lightning address well-known alias
+GET  /api/v1/lnurlp/{order_id}/callback   Invoice + LUD-10 success action
 ```
-
-The bond response includes both a bech32 `lnurl` value and the raw
-`lnurl_pay_url`. The first two endpoints above return a fixed-amount LNURL
-`payRequest`. The callback validates the amount, returns the order invoice as
-`pr`, and includes a LUD-10 `successAction` containing the encrypted
-certificate.
-
-For LNURL/LUD-10 interoperability, the success action should use:
-
-- `tag: "aes"`
-- `description`: short text shown by the wallet
-- `ciphertext`: encrypted certificate payload
-- `iv`: base64 initialization vector
-
-LUD-10 specifies AES-256-CBC with PKCS padding and the payment preimage as the
-key. The LNURL callback implements that format. The direct browser JSON API
-still uses AES-256-GCM and returns `encrypted_cert` plus `cert_nonce`.
 
 ### Admin Endpoints
 
-Admin endpoints require:
+All admin endpoints require:
 
-```text
+```
 X-Admin-Key: $ADMIN_API_KEY
 ```
 
-Create a tier:
+**Create a bond** — derives the BIP46 address immediately:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/admin/tiers \
+curl -X POST http://localhost:8000/api/v1/admin/bonds \
   -H "X-Admin-Key: $ADMIN_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{
-    "name": "12 month",
+    "name": "12-month bond",
     "description": "12 month fidelity bond",
     "max_slots": 10,
     "bond_sats": 1000000,
@@ -239,143 +174,121 @@ curl -X POST http://localhost:8000/api/v1/admin/tiers \
   }'
 ```
 
-Create a pool for a tier:
+Supply `timelock_index` (0–959) instead of `timelock_duration_months` to pin a
+specific BIP46 index.
+
+The response includes `timelocked_address`. Send `bond_sats` to that address
+on-chain, then record the UTXO.
+
+**Record a funded UTXO** — activates the bond for sale immediately:
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/admin/pools \
+curl -X POST http://localhost:8000/api/v1/admin/bonds/{bond_id}/record-utxo \
   -H "X-Admin-Key: $ADMIN_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{
-    "tier_id": "tier-uuid",
-    "fund_via_bitcoin_rpc": false
-  }'
+  -d '{"txid": "...", "vout": 0, "sats": 1000000}'
 ```
 
-If `timelock_index` is omitted, the service picks the next BIP46 index whose
-expiry is at least `timelock_duration_months` in the future.
-
-Fund an existing pool through the configured Bitcoin Core wallet:
+**List / inspect bonds:**
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/admin/pools/pool-uuid/fund \
+curl http://localhost:8000/api/v1/admin/bonds \
+  -H "X-Admin-Key: $ADMIN_API_KEY"
+
+curl http://localhost:8000/api/v1/admin/bonds/{bond_id} \
   -H "X-Admin-Key: $ADMIN_API_KEY"
 ```
 
-Record a pool UTXO manually:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/admin/pools/pool-uuid/record-utxo \
-  -H "X-Admin-Key: $ADMIN_API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "txid": "txid",
-    "vout": 0,
-    "sats": 1000000
-  }'
-```
-
-List pools:
-
-```bash
-curl http://localhost:8000/api/v1/admin/pools \
-  -H "X-Admin-Key: $ADMIN_API_KEY"
-```
-
-List orders:
+**List orders:**
 
 ```bash
 curl http://localhost:8000/api/v1/admin/orders \
   -H "X-Admin-Key: $ADMIN_API_KEY"
 ```
 
-## Webhooks
+### Webhook
 
-LNbits should call:
+LNbits must be configured to call:
 
-```text
+```
 POST /api/v1/webhook/payment
 X-Api-Key: $LNBITS_WEBHOOK_SECRET
 ```
 
-The JSON body must include either `payment_hash` or `checking_id`. On receipt,
-the service schedules background handling that transitions the matching order
-from `PENDING_PAYMENT` to `PAID`.
+The JSON body must contain `payment_hash` or `checking_id`. On receipt the
+service transitions the matching order from `PENDING_PAYMENT` to `PAID`.
 
 ## Lifecycle
 
-1. Admin creates a tier.
-2. Admin creates a pool for that tier.
-3. Pool is funded to its derived BIP46 timelocked address.
-4. The background pool monitor finds/confirms the UTXO through electrs and marks
-   the pool `AVAILABLE`.
-5. User requests a bond order for a tier and Nostr pubkey.
-6. Service reserves one pool slot, signs certificate data, encrypts it with the
-   generated LN preimage, and returns an invoice with the encrypted certificate.
-   It also returns an LNURL-pay URL and Lightning-address-style identifier for
-   wallets that prefer that flow.
-7. User pays the invoice.
-8. LNbits webhook marks the order `PAID`.
-9. User polls order status and receives `encrypted_cert` plus `cert_nonce`.
-10. Browser asks the user to paste the Lightning payment preimage from their
-    wallet.
-11. Browser decrypts the certificate locally and uses the decrypted fields to
-    assemble the NIP-600 event.
-12. User signs and publishes the NIP-600 event with their own Nostr key.
+1. Admin creates a bond → receives a BIP46 timelocked address.
+2. Admin sends `bond_sats` to that address on-chain.
+3. Admin calls `record-utxo` → bond becomes `AVAILABLE`.
+4. User calls `POST /bond/request` with `bond_id` and Nostr pubkey.
+5. Service reserves a slot, signs certificate data, encrypts it with the
+   generated preimage, and returns the invoice plus encrypted certificate.
+6. User pays the invoice (directly or via LNURL / Lightning address).
+7. LNbits webhook marks the order `PAID`.
+8. User polls order status until `PAID`, then decrypts the certificate locally
+   with the payment preimage.
+9. User signs and publishes the NIP-600 event with their own Nostr key.
 
-Pending orders expire after `INVOICE_EXPIRY_SECONDS`; the expiry job marks them
-`EXPIRED` and returns the reserved slot to the pool.
+Pending orders expire after `INVOICE_EXPIRY_SECONDS`; the background expiry job
+marks them `EXPIRED` and returns the slot to the bond.
 
 ## States
 
-Pool states:
+Bond statuses:
 
-- `PENDING_FUNDING`: pool exists but the backing UTXO is not confirmed yet.
-- `AVAILABLE`: pool has confirmed funds and can sell slots.
-- `FULL`: all slots are reserved or sold.
-- `EXPIRED`: defined in the model, but not currently transitioned by jobs.
+| Status            | Meaning                                      |
+|-------------------|----------------------------------------------|
+| `PENDING_FUNDING` | Created but UTXO not yet recorded            |
+| `AVAILABLE`       | Funded and selling slots                     |
+| `FULL`            | All slots reserved or sold                   |
+| `EXPIRED`         | Bond locktime has passed                     |
 
 Order states:
 
-- `PENDING_PAYMENT`: invoice created and slot reserved.
-- `PAID`: payment confirmed and encrypted certificate is available.
-- `EXPIRED`: invoice expired before payment and slot was released.
+| State             | Meaning                                      |
+|-------------------|----------------------------------------------|
+| `PENDING_PAYMENT` | Invoice created, slot reserved               |
+| `PAID`            | Payment confirmed, certificate available     |
+| `EXPIRED`         | Invoice expired, slot returned to bond       |
 
 ## Testing
-
-Run the test suite:
 
 ```bash
 uv run pytest
 ```
 
-The current tests cover BIP46 timestamp/script helpers, certificate message
-formatting, Bitcoin-message hash behavior, certificate signature format,
-AES-GCM certificate encryption, and Nostr pubkey normalization. Some reference
-vector tests are placeholders and are skipped until TypeScript reference values
-are filled in.
+Tests cover: BIP46 timestamp and script helpers, certificate message format,
+Bitcoin-message hash, certificate signature format, AES-GCM encryption, LUD-10
+AES-CBC encryption, and Nostr pubkey normalization.
 
 ## Security Notes
 
-- Keep `BIP46_XPRV`, `PREIMAGE_ENCRYPTION_KEY`, LNbits keys, Bitcoin RPC
-  credentials, and `ADMIN_API_KEY` secret.
-- Back up the database and the HD wallet material together. Existing encrypted
+- Keep `BIP46_XPRV`, `PREIMAGE_ENCRYPTION_KEY`, LNbits keys, and `ADMIN_API_KEY`
+  secret. Together they control fund access and certificate issuance.
+- Back up the database and HD wallet material together. Stored encrypted
   preimages require `PREIMAGE_ENCRYPTION_KEY` to recover.
-- Restrict Bitcoin RPC access to trusted hosts only. The configured wallet can
-  send funds to timelock pool addresses.
-- CORS currently allows all origins.
-- Admin authentication is a static header key.
+- CORS is currently open to all origins.
+- Admin authentication is a static header key; put the service behind a reverse
+  proxy and restrict admin routes to trusted networks.
 
 ## Implementation Notes
 
-- BIP46 indexes map month-by-month from January 2020 at index `0` through
-  December 2099 at index `959`.
-- The derivation path for service private signing is `m/84h/0h/0h/2/{index}`.
+- BIP46 indexes map month-by-month from January 2020 (index `0`) through
+  December 2099 (index `959`).
+- The private signing derivation path is `m/84h/0h/0h/2/{index}`.
 - Public verification derives from the account xpub at `m/2/{index}`.
 - Certificates are signed over:
 
-```text
-fidelity-bond-cert|{npub_hex}|{expiry}
-```
+  ```
+  fidelity-bond-cert|{npub_hex}|{expiry}
+  ```
 
 - Certificate payloads contain `bond_sig`, `xpub`, `utxo`, `timelock_index`,
   and `expiry`.
+- The `lnurl` PyPI package provides AES-CBC primitives for LUD-10 success
+  actions (`lnurl.helpers.aes_encrypt`).
+- The `bip46` and `bip32` PyPI packages handle HD key derivation and witness
+  script construction.

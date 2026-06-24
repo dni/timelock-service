@@ -22,7 +22,6 @@ class Settings(BaseSettings):
     default_fee_rate: float = 0.10
     invoice_expiry_seconds: int = 3600
     min_bond_sats: int = 100_000
-    utxo_min_confirmations: int = 1
     service_base_url: str = "http://localhost:8000"
 
 

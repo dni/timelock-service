@@ -15,7 +15,6 @@ from app.crypto.certificate import sign_bond_cert
 from app.crypto.nostr import normalize_public_key
 from app.models import Bond, BondOrder, BondStatus, OrderState
 from app.repository import BondRepository, OrderRepository
-from app.services.electrs import electrs_client
 from app.services.lnbits import lnbits_client
 
 logger = logging.getLogger("uvicorn")
@@ -73,13 +72,20 @@ class BondService:
         return bond
 
     async def record_bond_utxo(self, bond_id: str, txid: str, vout: int, sats: int | None = None) -> None:
+        """Record the on-chain UTXO and activate the bond for sale."""
         bond = await self.bonds.get_by_id(bond_id)
         if not bond:
             raise ValueError(f"Bond {bond_id} not found")
-        updates: dict = {"utxo_txid": txid, "utxo_vout": vout}
+        updates: dict = {
+            "utxo_txid": txid,
+            "utxo_vout": vout,
+            "status": BondStatus.AVAILABLE,
+            "confirmed_at": int(time.time()),
+        }
         if sats is not None:
             updates["utxo_sats"] = sats
         await self.bonds.update(bond_id, **updates)
+        logger.info(f"Bond {bond_id} UTXO recorded ({txid}:{vout}) — now AVAILABLE")
 
     # ── Order lifecycle ───────────────────────────────────────────────────────
 
@@ -167,33 +173,3 @@ class BondService:
             logger.info(f"Order {order.id} expired, slot returned to bond {order.bond_id}")
             count += 1
         return count
-
-    async def check_pending_bonds(self) -> int:
-        """Poll blockexplorer for UTXO confirmation on PENDING_FUNDING bonds."""
-        pending = await self.bonds.get_by_status(BondStatus.PENDING_FUNDING)
-        activated = 0
-        for bond in pending:
-            if not bond.utxo_txid:
-                try:
-                    result = await electrs_client.find_utxo_for_address(bond.timelocked_address, bond.bond_sats)
-                    if result:
-                        txid, vout, sats = result
-                        await self.bonds.update(bond.id, utxo_txid=txid, utxo_vout=vout, utxo_sats=sats)
-                        bond = await self.bonds.get_by_id(bond.id)
-                except Exception as exc:
-                    logger.warning(f"Bond {bond.id} UTXO scan failed: {exc}")
-                    continue
-
-            if bond and bond.utxo_txid:
-                try:
-                    confirmed = await electrs_client.is_utxo_confirmed(
-                        bond.utxo_txid, bond.utxo_vout or 0,
-                        min_confirmations=settings.utxo_min_confirmations,
-                    )
-                    if confirmed:
-                        await self.bonds.update(bond.id, status=BondStatus.AVAILABLE, confirmed_at=int(time.time()))
-                        logger.info(f"Bond {bond.id} confirmed and now AVAILABLE")
-                        activated += 1
-                except Exception as exc:
-                    logger.warning(f"Bond {bond.id} confirmation check failed: {exc}")
-        return activated

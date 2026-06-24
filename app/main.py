@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_tables
 from app.endpoints import admin, bond, lnurl, tiers, webhook
-from app.jobs import bond_monitor_job, order_expiry_job
+from app.jobs import order_expiry_job
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn")
@@ -18,16 +18,14 @@ async def lifespan(app: FastAPI):
     await create_tables()
     logger.info("Database tables ready")
 
-    task_monitor = asyncio.create_task(bond_monitor_job(interval_seconds=60))
     task_expiry = asyncio.create_task(order_expiry_job(interval_seconds=60))
     logger.info("Background jobs started")
 
     yield
 
-    task_monitor.cancel()
     task_expiry.cancel()
     with suppress(asyncio.CancelledError):
-        await asyncio.gather(task_monitor, task_expiry)
+        await task_expiry
     logger.info("Background jobs stopped")
 
 

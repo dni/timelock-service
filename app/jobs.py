@@ -8,20 +8,6 @@ from app.services.bond import BondService
 logger = logging.getLogger("uvicorn")
 
 
-async def bond_monitor_job(interval_seconds: int = 60) -> None:
-    """Poll blockexplorer for UTXO confirmation on PENDING_FUNDING bonds."""
-    while True:
-        try:
-            async with async_session_maker() as session:
-                svc = BondService(session)
-                activated = await svc.check_pending_bonds()
-                if activated:
-                    logger.info(f"Bond monitor: activated {activated} bond(s)")
-        except Exception as exc:
-            logger.error(f"Bond monitor error: {exc}")
-        await asyncio.sleep(interval_seconds)
-
-
 async def order_expiry_job(interval_seconds: int = 60) -> None:
     """Expire PENDING_PAYMENT orders past their deadline and return slots to bond."""
     while True:
