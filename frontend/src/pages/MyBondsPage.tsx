@@ -1,7 +1,32 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { listMyBonds, removeMyBond, type SavedBond } from "../myBondHistory";
+import { listMyBonds, removeMyBond, saveMyBond, type SavedBond } from "../myBondHistory";
+import { deriveBonds } from "../lib/timelock";
 import Footer from "../Footer";
+
+const FAKE_MNEMONIC = "test test test test test test test test test test test junk";
+
+// Jan 2026 → index 72, Jan 2027 → 84, Jan 2028 → 96
+const FAKE_INDICES = [72, 84, 96];
+
+function seedFakeBonds() {
+  for (const idx of FAKE_INDICES) {
+    const [b] = deriveBonds(FAKE_MNEMONIC, "", idx, idx);
+    saveMyBond({
+      id: crypto.randomUUID(),
+      created_at: Math.floor(Date.now() / 1000),
+      address: b.address,
+      bond_index: b.index,
+      bond_lock_date: b.timelockDate,
+      timelock_ts: b.timelockTs,
+      pubkey_hex: b.pubkeyHex,
+      witness_script_hex: b.witnessScriptHex,
+      key_material: { type: "mnemonic", words: FAKE_MNEMONIC, passphrase: "" },
+      label: "Fake",
+      certs: [],
+    });
+  }
+}
 
 interface Utxo {
   txid: string;
@@ -95,6 +120,14 @@ export default function MyBondsPage() {
               <button type="button" class="link-btn" onClick={() => navigate("/wallet")}>wallet tool</button>
               {" "}and click Save Bond.
             </p>
+            <button
+              type="button"
+              class="btn-secondary"
+              style={{ "margin-top": "1rem" }}
+              onClick={() => { seedFakeBonds(); reload(); void checkAll(listMyBonds()); }}
+            >
+              Gimme fake bonds
+            </button>
           </div>
         }
       >
@@ -105,7 +138,10 @@ export default function MyBondsPage() {
               return (
                 <div class="bond-card">
                   <div class="bond-card-header">
-                    <h2>Bond #{bond.bond_index}</h2>
+                    <h2>
+                      {bond.label ? <span class="bond-label">{bond.label}</span> : null}
+                      Bond #{bond.bond_index}
+                    </h2>
                     {fundingBadge(fs())}
                   </div>
 

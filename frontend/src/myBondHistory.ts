@@ -25,6 +25,7 @@ export interface SavedBond {
   pubkey_hex: string;
   witness_script_hex: string;
   key_material?: KeyMaterial;
+  label?: string;
   certs: SavedBondCert[];
 }
 

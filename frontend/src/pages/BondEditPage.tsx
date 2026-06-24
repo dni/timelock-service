@@ -58,7 +58,10 @@ export default function BondEditPage() {
       >
         {(b) => (
           <>
-            <h2 class="order-title">Bond #{b().bond_index}</h2>
+            <h2 class="order-title">
+              {b().label ? <span class="bond-label">{b().label}</span> : null}
+              Bond #{b().bond_index}
+            </h2>
 
             {/* Bond details */}
             <div class="card">

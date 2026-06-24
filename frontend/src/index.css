@@ -43,6 +43,22 @@ body {
   z-index: 101;
 }
 
+.bond-label {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.45em;
+  vertical-align: middle;
+  margin-right: 0.45rem;
+  position: relative;
+  top: -1px;
+}
+
 .alpha-badge {
   display: inline-block;
   font-size: 0.55rem;
