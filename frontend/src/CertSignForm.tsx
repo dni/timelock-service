@@ -1,9 +1,10 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { bech32 } from "@scure/base";
 import { bytesToHex } from "@noble/hashes/utils";
 import { signCertificate, signCertificateFromXprv, currentBlockPeriod, periodToApproxDate } from "./lib/certificate";
 import { validateMnemonic, validateXprv } from "./lib/wallet";
 import { getExtensionNpub } from "./nostr";
+import type { KeyMaterial } from "./myBondHistory";
 import type { Certificate } from "./lib/types";
 
 const EXPIRY_PRESETS = [
@@ -29,6 +30,7 @@ interface Props {
   bondLockDate: string;
   onSigned: (cert: Certificate) => void;
   onCancel?: () => void;
+  initialKeyMaterial?: KeyMaterial;
 }
 
 export default function CertSignForm(props: Props) {
@@ -41,6 +43,19 @@ export default function CertSignForm(props: Props) {
   const [error, setError] = createSignal("");
   const [cert, setCert] = createSignal<Certificate | null>(null);
   const [copied, setCopied] = createSignal(false);
+
+  onMount(() => {
+    const km = props.initialKeyMaterial;
+    if (!km) return;
+    if (km.type === "mnemonic") {
+      setKeyType("mnemonic");
+      setKeyInput(km.words);
+      setPassphrase(km.passphrase);
+    } else {
+      setKeyType("xprv");
+      setKeyInput(km.key);
+    }
+  });
 
   async function fillFromExtension() {
     if (!window.nostr?.getPublicKey) {

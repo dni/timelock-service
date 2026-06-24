@@ -1,11 +1,6 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import {
-  listMyBonds, removeMyBond, removeCertFromMyBond, addCertToMyBond,
-  type SavedBond,
-} from "../myBondHistory";
-import CertSignForm from "../CertSignForm";
-import type { Certificate } from "../lib/types";
+import { listMyBonds, removeMyBond, type SavedBond } from "../myBondHistory";
 import Footer from "../Footer";
 
 interface Utxo {
@@ -45,31 +40,11 @@ export default function MyBondsPage() {
   const [bonds, setBonds] = createSignal<SavedBond[]>(listMyBonds());
   const [funding, setFunding] = createSignal<Record<string, FundingStatus>>({});
 
-  const [activeForm, setActiveForm] = createSignal<string | null>(null);
-
-  function openForm(bondId: string) { setActiveForm(bondId); }
-  function closeForm() { setActiveForm(null); }
-
   function reload() { setBonds(listMyBonds()); }
 
   function forget(id: string) {
     removeMyBond(id);
     reload();
-  }
-
-  function onSigned(bondId: string, cert: Certificate) {
-    addCertToMyBond(bondId, {
-      id: crypto.randomUUID(),
-      created_at: Math.floor(Date.now() / 1000),
-      nostr_pubkey_hex: cert.certPubkeyHex,
-      bond_pubkey_hex: cert.bondPubkeyHex,
-      cert_expiry: cert.certExpiry,
-      cert_expiry_date: cert.expiryApproxDate,
-      message: cert.message,
-      signature_base64: cert.signatureBase64,
-    });
-    reload();
-    closeForm();
   }
 
   async function checkAll(list: SavedBond[]) {
@@ -127,7 +102,6 @@ export default function MyBondsPage() {
           <For each={bonds()}>
             {(bond) => {
               const fs = () => funding()[bond.id];
-              const isOpen = () => activeForm() === bond.id;
               return (
                 <div class="bond-card">
                   <div class="bond-card-header">
@@ -182,7 +156,7 @@ export default function MyBondsPage() {
                     </button>
                   </div>
 
-                  {/* Certificate list */}
+                  {/* Certificate summary (read-only) */}
                   <Show when={bond.certs.length > 0}>
                     <div style={{ "margin-top": "0.75rem" }}>
                       <p class="card-section-title" style={{ "margin-bottom": "0.5rem" }}>
@@ -190,62 +164,20 @@ export default function MyBondsPage() {
                       </p>
                       <For each={bond.certs}>
                         {(cert) => (
-                          <div class="cert-inline" style={{ "margin-bottom": "0.5rem" }}>
+                          <div class="cert-inline" style={{ "margin-bottom": "0.4rem" }}>
                             <dl class="stats">
                               <div>
                                 <dt>Nostr pubkey</dt>
                                 <dd class="mono-short">{cert.nostr_pubkey_hex.slice(0, 16)}…</dd>
                               </div>
                               <div>
-                                <dt>Cert expires ~</dt>
+                                <dt>Expires ~</dt>
                                 <dd class="accent">{cert.cert_expiry_date}</dd>
                               </div>
                             </dl>
-                            <div style={{ display: "flex", gap: "0.4rem", "margin-top": "0.5rem", "flex-wrap": "wrap" }}>
-                              <button
-                                type="button"
-                                class="btn-secondary"
-                                onClick={() =>
-                                  navigator.clipboard.writeText(
-                                    JSON.stringify({
-                                      message: cert.message,
-                                      bond_pubkey: cert.bond_pubkey_hex,
-                                      cert_pubkey: cert.nostr_pubkey_hex,
-                                      cert_expiry: cert.cert_expiry,
-                                      expiry_approx_date: cert.cert_expiry_date,
-                                      signature: cert.signature_base64,
-                                    }, null, 2),
-                                  )
-                                }
-                              >
-                                Copy JSON
-                              </button>
-                              <button
-                                type="button"
-                                class="btn-secondary"
-                                onClick={() => { removeCertFromMyBond(bond.id, cert.id); reload(); }}
-                              >
-                                Remove
-                              </button>
-                            </div>
                           </div>
                         )}
                       </For>
-                    </div>
-                  </Show>
-
-                  {/* Add certificate inline form */}
-                  <Show when={isOpen()}>
-                    <div class="cert-inline" style={{ "margin-top": "0.75rem" }}>
-                      <p class="card-section-title" style={{ "margin-bottom": "0.75rem" }}>
-                        New certificate · Bond #{bond.bond_index}
-                      </p>
-                      <CertSignForm
-                        bondIndex={bond.bond_index}
-                        bondLockDate={bond.bond_lock_date}
-                        onSigned={(cert) => onSigned(bond.id, cert)}
-                        onCancel={closeForm}
-                      />
                     </div>
                   </Show>
 
@@ -253,9 +185,9 @@ export default function MyBondsPage() {
                     <button
                       type="button"
                       class="btn-primary"
-                      onClick={() => isOpen() ? closeForm() : openForm(bond.id)}
+                      onClick={() => navigate(`/my-bonds/${bond.id}`)}
                     >
-                      {isOpen() ? "Cancel" : "+ Add Certificate"}
+                      Edit
                     </button>
                     <a
                       href={`https://mempool.space/address/${bond.address}`}
