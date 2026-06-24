@@ -1,9 +1,10 @@
-"""AES-256-GCM encryption using the Lightning preimage as the key."""
+"""AES encryption: GCM for cert storage, CBC (via lnurl) for LUD-10 success actions."""
 import base64
 import os
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from lnurl.helpers import aes_encrypt as _lud10_aes_encrypt
 
 
 def encrypt_cert(cert_json: str, preimage_r: bytes) -> tuple[str, str]:
@@ -43,3 +44,11 @@ def decrypt_bytes(ciphertext_b64: str, nonce_hex: str, key: bytes) -> bytes:
     ciphertext = base64.b64decode(ciphertext_b64)
     aesgcm = AESGCM(key)
     return aesgcm.decrypt(nonce, ciphertext, None)
+
+
+def encrypt_lud10_success_action(message: str, preimage_r: bytes) -> tuple[str, str]:
+    """
+    Encrypt a LUD-10 successAction payload (AES-256-CBC, PKCS7 padding).
+    Returns (ciphertext_b64, iv_b64).
+    """
+    return _lud10_aes_encrypt(preimage_r, message)

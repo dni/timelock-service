@@ -46,16 +46,17 @@ def test_bitcoin_message_hash_known_vector():
 
 def test_sign_bond_cert_format():
     """Sign with a test key and verify the output format."""
-    from embit import bip39, bip32
+    import hashlib
+    from bip32 import BIP32
 
-    # Deterministic test mnemonic
+    # Deterministic test mnemonic (BIP39 "abandon x11 about")
     TEST_MNEMONIC = (
         "abandon abandon abandon abandon abandon abandon "
         "abandon abandon abandon abandon abandon about"
     )
-    seed = bip39.mnemonic_to_seed(TEST_MNEMONIC)
-    master = bip32.HDKey.from_seed(seed)
-    xprv = master.to_string()
+    # BIP39 seed derivation: PBKDF2-HMAC-SHA512, 2048 rounds, "mnemonic" salt
+    seed = hashlib.pbkdf2_hmac("sha512", TEST_MNEMONIC.encode(), b"mnemonic", 2048)
+    xprv = BIP32.from_seed(seed).get_xpriv_from_path("m")
 
     from app.crypto.certificate import sign_bond_cert
 
@@ -101,6 +102,32 @@ def test_aes_wrong_preimage_raises():
     wrong_r = os.urandom(32)
     with pytest.raises(InvalidTag):
         decrypt_cert(ct, nonce, wrong_r)
+
+
+def test_lud10_success_action_encrypts_aes_cbc_payload():
+    import base64
+    import os
+
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives.padding import PKCS7
+
+    from app.crypto.aes import encrypt_lud10_success_action
+
+    message = '{"bond_sig":"sig","xpub":"xpub"}'
+    preimage_r = os.urandom(32)
+    ciphertext_b64, iv_b64 = encrypt_lud10_success_action(message, preimage_r)
+
+    iv = base64.b64decode(iv_b64)
+    ciphertext = base64.b64decode(ciphertext_b64)
+    assert len(iv) == 16
+    assert len(ciphertext) % 16 == 0
+
+    cipher = Cipher(algorithms.AES(preimage_r), modes.CBC(iv))
+    decryptor = cipher.decryptor()
+    padded = decryptor.update(ciphertext) + decryptor.finalize()
+    unpadder = PKCS7(128).unpadder()
+    plaintext = unpadder.update(padded) + unpadder.finalize()
+    assert plaintext.decode("utf-8") == message
 
 
 # ── Nostr pubkey normalisation ─────────────────────────────────────────────────

@@ -2,38 +2,30 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.repository import PoolRepository, TierRepository
-from app.schemas import TierWithAvailabilityResponse
+from app.models import BondStatus
+from app.repository import BondRepository
+from app.schemas import BondListItem
 
-router = APIRouter(prefix="/api/v1/tiers", tags=["tiers"])
+router = APIRouter(prefix="/api/v1/bonds", tags=["bonds"])
 
 
-@router.get("", response_model=list[TierWithAvailabilityResponse])
-async def list_tiers(session: AsyncSession = Depends(get_session)):
-    tier_repo = TierRepository(session)
-    pool_repo = PoolRepository(session)
-    tiers = await tier_repo.list_active()
-
-    from app.models import PoolStatus
-    result = []
-    for tier in tiers:
-        pools = await pool_repo.get_by_status(PoolStatus.AVAILABLE)
-        tier_pools = [p for p in pools if p.tier_id == tier.id]
-        slots_available = sum(
-            max(0, tier.max_slots - p.used_slots) for p in tier_pools
+@router.get("", response_model=list[BondListItem])
+async def list_available_bonds(session: AsyncSession = Depends(get_session)):
+    """List bonds that are available for purchase."""
+    repo = BondRepository(session)
+    bonds = await repo.get_by_status(BondStatus.AVAILABLE)
+    return [
+        BondListItem(
+            id=b.id,
+            name=b.name,
+            description=b.description,
+            max_slots=b.max_slots,
+            slots_available=b.slots_available,
+            bond_sats=b.bond_sats,
+            price_per_slot_sats=b.price_per_slot_sats,
+            fee_rate=b.fee_rate,
+            timelock_expiry=b.timelock_expiry,
+            status=b.status,
         )
-        result.append(
-            TierWithAvailabilityResponse(
-                id=tier.id,
-                name=tier.name,
-                description=tier.description,
-                max_slots=tier.max_slots,
-                bond_sats=tier.bond_sats,
-                price_per_slot_sats=tier.price_per_slot_sats,
-                fee_rate=tier.fee_rate,
-                timelock_duration_months=tier.timelock_duration_months,
-                is_active=tier.is_active,
-                slots_available=slots_available,
-            )
-        )
-    return result
+        for b in bonds
+    ]

@@ -10,10 +10,11 @@ dependencies = [
     "httpx>=0.28.0",
     "sqlalchemy>=2.0.0",
     "aiosqlite>=0.20.0",
-    "embit>=0.8.0",
     "coincurve>=20.0.0",
-    "bech32>=1.2.0",
     "cryptography>=42.0.0",
+    "bip46>=1.1.0",
+    "lnurl>=2.0.1",
+    "bech32>=1.2.0",
 ]
 
 [project.optional-dependencies]

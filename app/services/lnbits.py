@@ -26,7 +26,7 @@ class LnbitsClient:
     ) -> dict:
         """
         Create a Lightning invoice with a specific preimage.
-        LNbits forwards `preimage` to CLN's invoice command.
+        LNbits should create the invoice using this preimage.
         Returns {"payment_hash": ..., "payment_request": ...}.
         """
         payload: dict = {
@@ -36,7 +36,7 @@ class LnbitsClient:
             "expiry": expiry_seconds,
             "webhook": webhook_url,
         }
-        # Custom preimage: CLN sets payment_hash = SHA256(preimage)
+        # Custom preimage: payment_hash = SHA256(preimage)
         if preimage_hex:
             payload["preimage"] = preimage_hex
         async with httpx.AsyncClient(timeout=30) as client:

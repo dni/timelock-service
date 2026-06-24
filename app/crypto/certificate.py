@@ -5,9 +5,10 @@ Produces bond_sig: Bitcoin-message-signed secp256k1 signature over the cert mess
 import base64
 import hashlib
 
-from embit import bip32
+import coincurve
+from bip32 import BIP32
+from bip46 import lockindex_to_derivation_path
 
-BOND_PATH_PREFIX = "m/84h/0h/0h/2"
 BITCOIN_MSG_MAGIC = b"Bitcoin Signed Message:\n"
 
 
@@ -44,20 +45,15 @@ def sign_bond_cert(xprv: str, index: int, npub_hex: str, expiry: int) -> str:
     Returns bond_sig: base64-encoded 65-byte signature (1-byte header + 64-byte compact sig).
     Header byte = 0x1f + recovery (mirrors the TypeScript: 0x1f + sig.recovery).
     """
-    master = bip32.HDKey.from_string(xprv)
-    child = master.derive(f"{BOND_PATH_PREFIX}/{index}")
-    privkey = child.key
+    path = lockindex_to_derivation_path(index, network="mainnet")
+    privkey_bytes = BIP32.from_xpriv(xprv).get_privkey_from_path(path)
 
     message = build_cert_message(npub_hex, expiry)
     msg_hash = _bitcoin_message_hash(message)
 
-    # Use coincurve for compact signature + recovery byte (embit gives DER only)
-    import coincurve
-    cc_privkey = coincurve.PrivateKey(privkey.serialize())
     # sign_recoverable: 65 bytes = compact_sig(64) + recovery_byte(1)
-    recoverable = cc_privkey.sign_recoverable(msg_hash, hasher=None)
+    recoverable = coincurve.PrivateKey(privkey_bytes).sign_recoverable(msg_hash, hasher=None)
     compact_sig = recoverable[:64]  # r||s
     recovery = recoverable[64]      # 0 or 1
-    header_byte = 0x1F + recovery
-    sig_bytes = bytes([header_byte]) + compact_sig
+    sig_bytes = bytes([0x1F + recovery]) + compact_sig
     return base64.b64encode(sig_bytes).decode()

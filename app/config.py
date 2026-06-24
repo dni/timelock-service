@@ -13,13 +13,6 @@ class Settings(BaseSettings):
     lnbits_invoice_key: str
     lnbits_webhook_secret: str
 
-    # CLN/clnrest
-    cln_rest_url: str
-    cln_rest_rune: str
-
-    # Electrs (Esplora-compatible)
-    electrs_url: str
-
     # Admin API
     admin_api_key: str
 

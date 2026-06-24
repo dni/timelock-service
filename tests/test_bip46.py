@@ -3,12 +3,7 @@ Validates BIP46 derivation against TypeScript reference from timelock-wallet.
 Run: pytest tests/test_bip46.py -v
 """
 import pytest
-from app.crypto.bip46 import (
-    _encode_cscriptnum,
-    build_witness_script,
-    index_to_timelock_ts,
-    witness_script_to_p2wsh,
-)
+from app.crypto.bip46 import index_to_timelock_ts, derive_bond_from_xprv, derive_bond_from_xpub
 
 
 def test_index_to_timelock_ts_boundaries():
@@ -26,50 +21,36 @@ def test_index_to_timelock_ts_boundaries():
 
 
 def test_index_invalid():
-    with pytest.raises(ValueError):
+    from bip46 import Bip46IndexError
+    with pytest.raises(Bip46IndexError):
         index_to_timelock_ts(-1)
-    with pytest.raises(ValueError):
+    with pytest.raises(Bip46IndexError):
         index_to_timelock_ts(960)
 
 
-def test_encode_cscriptnum_zero():
-    assert _encode_cscriptnum(0) == b""
-
-
-def test_encode_cscriptnum_small():
-    assert _encode_cscriptnum(1) == b"\x01"
-    assert _encode_cscriptnum(127) == b"\x7f"
-    assert _encode_cscriptnum(128) == b"\x80\x00"
-
-
-def test_encode_cscriptnum_locktime():
-    # Unix ts ~1.7B fits in 5 bytes
-    ts = index_to_timelock_ts(72)  # 1767225600
-    encoded = _encode_cscriptnum(ts)
-    assert 4 <= len(encoded) <= 5
-
-
 def test_witness_script_structure():
-    # Use a dummy 33-byte pubkey
-    pubkey = bytes(33)
+    """Redeemscript has the correct BIP46 structure via derive_bond_from_xprv."""
+    from bip46 import create_redeemscript, index_to_lockdate
+    import os
+    # Build a dummy pubkey and verify script structure
     pubkey = b"\x02" + bytes(32)
-    locktime = index_to_timelock_ts(72)
-    script = build_witness_script(pubkey, locktime)
-    # Script must end with OP_CHECKSIG (0xac)
-    assert script[-1] == 0xAC
-    # Must contain OP_CLTV (0xb1) and OP_DROP (0x75)
-    assert b"\xb1" in script
-    assert b"\x75" in script
-    # Pubkey push: 0x21 (33 bytes) followed by pubkey
-    assert b"\x21" + pubkey in script
+    lock_date = index_to_lockdate(72)
+    ws = create_redeemscript(lock_date, pubkey)
+    # OP_CHECKSIG (0xac), OP_CLTV (0xb1), OP_DROP (0x75)
+    assert ws[-1] == 0xAC
+    assert b"\xb1" in ws
+    assert b"\x75" in ws
+    assert b"\x21" + pubkey in ws
 
 
 def test_witness_script_to_p2wsh_format():
+    """P2WSH address is mainnet bech32 with correct length."""
+    from bip46 import create_redeemscript, index_to_lockdate, redeemscript_pubkey, redeemscript_address
     pubkey = b"\x02" + bytes(32)
-    locktime = index_to_timelock_ts(0)
-    script = build_witness_script(pubkey, locktime)
-    address = witness_script_to_p2wsh(script)
-    # Must be a valid mainnet P2WSH (bech32, starts with bc1q, length 62)
+    lock_date = index_to_lockdate(0)
+    ws = create_redeemscript(lock_date, pubkey)
+    script_pubkey = redeemscript_pubkey(ws)
+    address = redeemscript_address(script_pubkey, network="mainnet")
     assert address.startswith("bc1q")
     assert len(address) == 62
 
