@@ -117,14 +117,13 @@ export default function BondList() {
           <button type="button" class="btn-hero" onClick={() => navigate("/bonds")}>
             Browse Bonds →
           </button>
-          <a
+          <button
+            type="button"
             class="btn-hero-secondary"
-            href="https://dni.github.io/timelock-wallet/"
-            target="_blank"
-            rel="noopener"
+            onClick={() => navigate("/wallet")}
           >
             Create your own
-          </a>
+          </button>
         </div>
 
         <div class="hero-pillars">

@@ -3,7 +3,9 @@ import BondList from "./pages/BondList";
 import BondsPage from "./pages/BondsPage";
 import CertificatesPage from "./pages/CertificatesPage";
 import ImportPage from "./pages/ImportPage";
+import MyBondsPage from "./pages/MyBondsPage";
 import OrderPage from "./pages/OrderPage";
+import WalletPage from "./pages/WalletPage";
 
 export default function App() {
   return (
@@ -13,7 +15,9 @@ export default function App() {
       <Route path="/order/new" component={OrderPage} />
       <Route path="/order/:id" component={OrderPage} />
       <Route path="/certificates" component={CertificatesPage} />
+      <Route path="/my-bonds" component={MyBondsPage} />
       <Route path="/import" component={ImportPage} />
+      <Route path="/wallet" component={WalletPage} />
     </Router>
   );
 }

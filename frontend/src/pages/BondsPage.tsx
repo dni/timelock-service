@@ -2,6 +2,7 @@ import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { fetchBonds, getOrder, type Bond, type Order } from "../api";
 import { listSavedOrders, removeOrder, type SavedOrder } from "../orderHistory";
+import { listSelfCerts, removeSelfCert, type SavedSelfCert } from "../selfCertHistory";
 import Footer from "../Footer";
 
 type SavedOrderWithStatus = SavedOrder & { order: Order | null; error: string | null };
@@ -46,6 +47,12 @@ export default function BondsPage() {
   const [tab, setTab] = createSignal<"bonds" | "certs">("bonds");
   const [bonds, { refetch: refetchBonds }] = createResource(fetchBonds);
   const [items, { refetch: refetchItems }] = createResource(fetchSavedOrders);
+  const [selfCerts, setSelfCerts] = createSignal<SavedSelfCert[]>(listSelfCerts());
+
+  function forgetSelfCert(id: string) {
+    removeSelfCert(id);
+    setSelfCerts(listSelfCerts());
+  }
   const [now, setNow] = createSignal(Date.now());
 
   const ticker = setInterval(() => setNow(Date.now()), 1000);
@@ -173,21 +180,87 @@ export default function BondsPage() {
       {/* ── My Certificates tab ── */}
       <Show when={tab() === "certs"}>
         <div class="certs-tab-actions">
-          <button
-            type="button"
-            class="btn-secondary"
-            onClick={() => navigate("/import")}
-          >
+          <button type="button" class="btn-secondary" onClick={() => navigate("/import")}>
             Import Certificate
           </button>
+          <button type="button" class="btn-secondary" onClick={() => navigate("/wallet")}>
+            Create self-signed
+          </button>
         </div>
+
+        {/* Self-signed certs */}
+        <Show when={selfCerts().length > 0}>
+          <p class="card-section-title" style={{ margin: "1.25rem 0 0.75rem" }}>Self-signed</p>
+          <div class="bond-grid">
+            <For each={selfCerts()}>
+              {(sc) => (
+                <div class="bond-card">
+                  <div class="bond-card-header">
+                    <h2>Self-signed cert</h2>
+                    <span class="badge badge-available">signed</span>
+                  </div>
+                  <dl class="stats">
+                    <div>
+                      <dt>Nostr pubkey</dt>
+                      <dd class="mono-short">{sc.nostr_pubkey_hex.slice(0, 12)}…</dd>
+                    </div>
+                    <div>
+                      <dt>Bond locked until</dt>
+                      <dd>{sc.bond_lock_date}</dd>
+                    </div>
+                    <div>
+                      <dt>Cert expires ~</dt>
+                      <dd class="accent">{sc.cert_expiry_date}</dd>
+                    </div>
+                    <div>
+                      <dt>Bond index</dt>
+                      <dd>{sc.bond_index}</dd>
+                    </div>
+                  </dl>
+                  <div class="button-row">
+                    <button
+                      type="button"
+                      class="btn-secondary"
+                      onClick={() => navigator.clipboard.writeText(JSON.stringify({
+                        message: sc.message,
+                        bond_pubkey: sc.bond_pubkey_hex,
+                        cert_pubkey: sc.nostr_pubkey_hex,
+                        cert_expiry: sc.cert_expiry,
+                        expiry_approx_date: sc.cert_expiry_date,
+                        signature: sc.signature_base64,
+                      }, null, 2))}
+                    >
+                      Copy JSON
+                    </button>
+                    <button
+                      type="button"
+                      class="btn-secondary"
+                      onClick={() => forgetSelfCert(sc.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+
+        {/* Service-issued orders */}
+        <Show when={(selfCerts().length > 0) || (items() ?? []).length > 0}>
+          <p class="card-section-title" style={{ margin: "1.25rem 0 0.75rem" }}>Service-issued</p>
+        </Show>
         <Show when={items.loading}>
-          <p class="muted center">Loading certificates…</p>
+          <p class="muted center">Loading…</p>
         </Show>
         <Show when={!items.loading && items()}>
           <Show
             when={(items() ?? []).length > 0}
-            fallback={<p class="muted center">No certificate orders saved in this browser.</p>}
+            fallback={
+              <Show when={selfCerts().length === 0}>
+                <p class="muted center">No certificates saved in this browser.</p>
+              </Show>
+            }
           >
             <div class="bond-grid">
               <For each={items()}>
