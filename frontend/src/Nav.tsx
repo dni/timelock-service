@@ -1,11 +1,17 @@
 import { A } from "@solidjs/router";
+import { createSignal } from "solid-js";
 
 export default function Nav() {
+  const [bannerVisible, setBannerVisible] = createSignal(true);
+
   return (
     <>
-      <div class="alpha-banner">
-        ⚠ Alpha — do not use real funds
-      </div>
+      {bannerVisible() && (
+        <div class="alpha-banner">
+          ⚠ Alpha — do not use real funds
+          <button class="alpha-banner-close" onClick={() => setBannerVisible(false)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
       <nav class="main-nav">
         <div class="main-nav-inner">
           <A href="/" class="nav-brand">

@@ -37,7 +37,27 @@ body {
   font-size: 0.78rem;
   font-weight: 600;
   letter-spacing: 0.02em;
-  padding: 0.35rem 1rem;
+  padding: 0.35rem 2.5rem;
+  position: relative;
+}
+
+.alpha-banner-close {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #ffd6a5;
+  font-size: 0.8rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  opacity: 0.7;
+}
+
+.alpha-banner-close:hover {
+  opacity: 1;
 }
 
 .bond-label {
