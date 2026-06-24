@@ -38,9 +38,6 @@ body {
   font-weight: 600;
   letter-spacing: 0.02em;
   padding: 0.35rem 1rem;
-  position: sticky;
-  top: 0;
-  z-index: 101;
 }
 
 .bond-label {
