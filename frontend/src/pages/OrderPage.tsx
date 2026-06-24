@@ -1,7 +1,7 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import Footer from "../Footer";
-import { getOrder, getOrderPreimage, orderStatusWebSocketUrl, requestBond, type Order } from "../api";
+import { getOrder, getOrderPreimage, orderStatusWebSocketUrl, refreshOrder, requestBond, type Order } from "../api";
 import { decryptCert, type CertFields } from "../crypto";
 import {
   getExtensionNpub,
@@ -41,6 +41,7 @@ export default function OrderPage() {
   const [publishResult, setPublishResult] = createSignal("");
   const [savePreimage, setSavePreimage] = createSignal(false);
   const [preimageSaveStatus, setPreimageSaveStatus] = createSignal("");
+  const [refreshing, setRefreshing] = createSignal(false);
 
   createEffect(() => {
     if (!bondId() && !orderId()) navigate("/", { replace: true });
@@ -174,6 +175,29 @@ export default function OrderPage() {
       setPreimageSaveStatus("Preimage saved in this browser.");
     } catch {
       setPreimageSaveStatus("Could not save preimage automatically.");
+    }
+  }
+
+  async function manualRefresh() {
+    const id = orderId();
+    if (!id || refreshing()) return;
+    setRefreshing(true);
+    setError("");
+    try {
+      const updated = await refreshOrder(id);
+      setOrder(updated);
+      if (updated.state === "PAID") {
+        await savePaidPreimage(id);
+        setStep("decrypt");
+        closeWs();
+      } else if (updated.state === "EXPIRED") {
+        setError("Invoice expired.");
+        closeWs();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshing(false);
     }
   }
 
@@ -387,6 +411,17 @@ export default function OrderPage() {
                 <small>Off by default. Enables automatic decrypt prefill for this order.</small>
               </span>
             </label>
+
+            <div style={{ "margin-top": "1rem" }}>
+              <button
+                type="button"
+                class="btn-secondary"
+                disabled={refreshing()}
+                onClick={manualRefresh}
+              >
+                {refreshing() ? "Checking…" : "Refresh status"}
+              </button>
+            </div>
           </div>
         )}
       </Show>

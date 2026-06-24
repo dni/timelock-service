@@ -57,6 +57,9 @@ export const getOrder = (order_id: string) =>
 export const getOrderPreimage = (order_id: string) =>
   apiFetch<{ preimage: string }>(`/bond/${order_id}/preimage`);
 
+export const refreshOrder = (order_id: string) =>
+  apiFetch<Order>(`/bond/${order_id}/refresh`, { method: "POST" });
+
 export function orderStatusWebSocketUrl(order_id: string) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}${BASE}/bond/${order_id}/ws`;

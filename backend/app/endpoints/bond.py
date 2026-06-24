@@ -1,13 +1,17 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_maker, get_session
+from app.models import OrderState
 from app.repository import OrderRepository
 from app.schemas import BondOrderResponse, BondRequestBody, BondStatusResponse
 from app.services.bond import BondService
-from app.services.lnbits import LightningNodeUnavailableError
+from app.services.lnbits import LightningNodeUnavailableError, lnbits_client
+
+logger = logging.getLogger("uvicorn")
 
 router = APIRouter(prefix="/api/v1/bond", tags=["bond"])
 
@@ -64,6 +68,27 @@ async def get_bond_status(order_id: str, session: AsyncSession = Depends(get_ses
     order = await repo.get_by_id(order_id)
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
+    return _order_status_response(order)
+
+
+@router.post("/{order_id}/refresh", response_model=BondStatusResponse)
+async def refresh_bond_status(order_id: str, session: AsyncSession = Depends(get_session)):
+    """Poll LNBits directly for payment status and confirm the order if paid."""
+    repo = OrderRepository(session)
+    order = await repo.get_by_id(order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    if order.state == OrderState.PENDING_PAYMENT and order.lnbits_payment_hash:
+        try:
+            invoice = await lnbits_client.check_invoice(order.lnbits_payment_hash)
+            if invoice.get("paid"):
+                svc = BondService(session)
+                await svc.handle_payment_confirmed(order.lnbits_payment_hash)
+                order = await repo.get_by_id(order_id)
+        except Exception as exc:
+            logger.warning("LNBits manual check failed for order %s: %s", order_id, exc)
 
     return _order_status_response(order)
 

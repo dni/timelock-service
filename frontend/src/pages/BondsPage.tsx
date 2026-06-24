@@ -3,7 +3,31 @@ import { useNavigate } from "@solidjs/router";
 import { fetchBonds, getOrder, type Bond, type Order } from "../api";
 import { listSavedOrders, removeOrder, type SavedOrder } from "../orderHistory";
 import { listSelfCerts, removeSelfCert, type SavedSelfCert } from "../selfCertHistory";
+import { saveMyBond } from "../myBondHistory";
+import { deriveBonds } from "../lib/timelock";
 import Footer from "../Footer";
+
+const FAKE_MNEMONIC = "test test test test test test test test test test test junk";
+const FAKE_INDICES = [72, 84, 96]; // Jan 2026, Jan 2027, Jan 2028
+
+function seedFakeBonds() {
+  for (const idx of FAKE_INDICES) {
+    const [b] = deriveBonds(FAKE_MNEMONIC, "", idx, idx);
+    saveMyBond({
+      id: crypto.randomUUID(),
+      created_at: Math.floor(Date.now() / 1000),
+      address: b.address,
+      bond_index: b.index,
+      bond_lock_date: b.timelockDate,
+      timelock_ts: b.timelockTs,
+      pubkey_hex: b.pubkeyHex,
+      witness_script_hex: b.witnessScriptHex,
+      key_material: { type: "mnemonic", words: FAKE_MNEMONIC, passphrase: "" },
+      label: "Fake",
+      certs: [],
+    });
+  }
+}
 
 type SavedOrderWithStatus = SavedOrder & { order: Order | null; error: string | null };
 
@@ -78,13 +102,30 @@ export default function BondsPage() {
         <Show when={bonds.error}>
           <div class="error-box">
             <p>Could not load bonds: {String(bonds.error)}</p>
-            <button class="btn-secondary" onClick={refetchBonds}>Retry</button>
+            <div style={{ display: "flex", gap: "0.5rem", "flex-wrap": "wrap" }}>
+              <button class="btn-secondary" onClick={refetchBonds}>Retry</button>
+              <button class="btn-secondary" onClick={() => { seedFakeBonds(); navigate("/my-bonds"); }}>
+                Gimme fake bonds
+              </button>
+            </div>
           </div>
         </Show>
         <Show when={!bonds.loading && bonds()}>
           <Show
             when={(bonds() ?? []).length > 0}
-            fallback={<p class="muted center">No bonds available right now.</p>}
+            fallback={
+              <div class="empty-state">
+                <p class="muted">No bonds available right now.</p>
+                <button
+                  type="button"
+                  class="btn-secondary"
+                  style={{ "margin-top": "1rem" }}
+                  onClick={() => { seedFakeBonds(); navigate("/my-bonds"); }}
+                >
+                  Gimme fake bonds
+                </button>
+              </div>
+            }
           >
             <div class="bond-grid">
               <For each={bonds()}>
