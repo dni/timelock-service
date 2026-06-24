@@ -6,7 +6,7 @@ import Footer from "../Footer";
 import { deriveBonds, deriveBondsFromXpub, deriveBondFromXprv } from "../lib/timelock";
 import { generateMnemonic, validateMnemonic, validateXpub, validateXprv } from "../lib/wallet";
 import { signCertificate, signCertificateFromXprv, currentBlockPeriod, periodToApproxDate } from "../lib/certificate";
-import { saveMyBond, addCertToMyBond, type SavedBond } from "../myBondHistory";
+import { saveMyBond, addCertToMyBond, type SavedBond, type KeyMaterial } from "../myBondHistory";
 import type { TimelockBond, Certificate } from "../lib/types";
 
 const MONTHS = [
@@ -59,6 +59,12 @@ export default function WalletPage() {
   const [savedBondId, setSavedBondId] = createSignal<string | null>(null);
   const [bondSaved, setBondSaved] = createSignal(false);
 
+  function currentKeyMaterial(): KeyMaterial | undefined {
+    if (tab() === "mnemonic") return { type: "mnemonic", words: mnemonic(), passphrase: passphrase() };
+    if (tab() === "xprv") return { type: "xprv", key: xprv() };
+    return undefined;
+  }
+
   function makeSavedBond(b: TimelockBond): SavedBond {
     const id = savedBondId() ?? crypto.randomUUID();
     setSavedBondId(id);
@@ -71,15 +77,9 @@ export default function WalletPage() {
       timelock_ts: b.timelockTs,
       pubkey_hex: b.pubkeyHex,
       witness_script_hex: b.witnessScriptHex,
+      key_material: currentKeyMaterial(),
       certs: [],
     };
-  }
-
-  function saveBondOnly() {
-    const b = bond();
-    if (!b) return;
-    saveMyBond(makeSavedBond(b));
-    setBondSaved(true);
   }
 
   // Step 3 — certificate
@@ -129,34 +129,23 @@ export default function WalletPage() {
         throw new Error("Certificate signing requires a private key (use Mnemonic or xprv/zprv tab)");
       }
       setCert(c);
+      // auto-save cert — bond is already saved from derive step
+      const newCert = {
+        id: crypto.randomUUID(),
+        created_at: Math.floor(Date.now() / 1000),
+        nostr_pubkey_hex: c.certPubkeyHex,
+        bond_pubkey_hex: c.bondPubkeyHex,
+        cert_expiry: c.certExpiry,
+        cert_expiry_date: c.expiryApproxDate,
+        message: c.message,
+        signature_base64: c.signatureBase64,
+      };
+      const id = savedBondId();
+      if (id) addCertToMyBond(id, newCert);
+      setCertSaved(true);
     } catch (err) {
       setCertError(err instanceof Error ? err.message : String(err));
     }
-  }
-
-  function saveCert() {
-    const b = bond();
-    const c = cert();
-    if (!b || !c) return;
-    const newCert = {
-      id: crypto.randomUUID(),
-      created_at: Math.floor(Date.now() / 1000),
-      nostr_pubkey_hex: c.certPubkeyHex,
-      bond_pubkey_hex: c.bondPubkeyHex,
-      cert_expiry: c.certExpiry,
-      cert_expiry_date: c.expiryApproxDate,
-      message: c.message,
-      signature_base64: c.signatureBase64,
-    };
-    const existingId = savedBondId();
-    if (existingId) {
-      addCertToMyBond(existingId, newCert);
-    } else {
-      const base = makeSavedBond(b);
-      saveMyBond({ ...base, certs: [newCert] });
-    }
-    setBondSaved(true);
-    setCertSaved(true);
   }
 
   function copyCertJson() {
@@ -190,23 +179,26 @@ export default function WalletPage() {
       const idx = index();
       if (idx < 0 || idx > 959) throw new Error("Date out of BIP46 range (2020–2099)");
 
+      let b: TimelockBond;
       if (tab() === "mnemonic") {
         const words = mnemonic().trim();
         if (!validateMnemonic(words)) throw new Error("Invalid mnemonic — check word spelling and count");
-        const [b] = deriveBonds(words, passphrase(), idx, idx);
-        setBond(b);
+        [b] = deriveBonds(words, passphrase(), idx, idx);
       } else if (tab() === "xpub") {
         const key = xpub().trim();
         const err = validateXpub(key);
         if (err) throw new Error(err);
-        const [b] = deriveBondsFromXpub(key, idx, idx);
-        setBond(b);
+        [b] = deriveBondsFromXpub(key, idx, idx);
       } else {
         const key = xprv().trim();
         const err = validateXprv(key);
         if (err) throw new Error(err);
-        setBond(deriveBondFromXprv(key, idx));
+        b = deriveBondFromXprv(key, idx);
       }
+      setBond(b);
+      // auto-save bond with key material
+      saveMyBond(makeSavedBond(b));
+      setBondSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -422,20 +414,11 @@ export default function WalletPage() {
               </code>
             </details>
 
-            <div style={{ display: "flex", gap: "0.5rem", "margin-top": "1rem", "flex-wrap": "wrap" }}>
-              <button
-                type="button"
-                class={bondSaved() ? "btn-secondary" : "btn-primary"}
-                disabled={bondSaved()}
-                onClick={saveBondOnly}
-              >
-                {bondSaved() ? "Bond saved ✓" : "Save Bond"}
+            <div style={{ display: "flex", gap: "0.5rem", "margin-top": "1rem", "flex-wrap": "wrap", "align-items": "center" }}>
+              <span class="badge badge-available">Saved to My Bonds ✓</span>
+              <button type="button" class="btn-secondary" onClick={() => navigate("/my-bonds")}>
+                View in My Bonds →
               </button>
-              <Show when={bondSaved()}>
-                <button type="button" class="btn-secondary" onClick={() => navigate("/my-bonds")}>
-                  View in My Bonds →
-                </button>
-              </Show>
             </div>
           </div>
         )}
@@ -520,27 +503,14 @@ export default function WalletPage() {
                       {c().signatureBase64}
                     </code>
                   </div>
-                  <div style={{ display: "flex", gap: "0.5rem", "margin-top": "0.75rem", "flex-wrap": "wrap" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", "margin-top": "0.75rem", "flex-wrap": "wrap", "align-items": "center" }}>
                     <button type="button" class="btn-secondary" onClick={copyCertJson}>
                       {certCopied() ? "Copied!" : "Copy JSON"}
                     </button>
-                    <button
-                      type="button"
-                      class={certSaved() ? "btn-secondary" : "btn-primary"}
-                      onClick={saveCert}
-                      disabled={certSaved()}
-                    >
-                      {certSaved() ? "Saved ✓" : "Save to My Bonds"}
+                    <span class="badge badge-available">Saved ✓</span>
+                    <button type="button" class="btn-secondary" onClick={() => navigate("/my-bonds")}>
+                      View in My Bonds →
                     </button>
-                    <Show when={certSaved()}>
-                      <button
-                        type="button"
-                        class="btn-secondary"
-                        onClick={() => navigate("/my-bonds")}
-                      >
-                        View in My Bonds →
-                      </button>
-                    </Show>
                   </div>
                 </div>
               )}

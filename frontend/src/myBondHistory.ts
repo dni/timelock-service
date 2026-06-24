@@ -1,5 +1,9 @@
 const KEY = "timelock.my_bonds.v1";
 
+export type KeyMaterial =
+  | { type: "mnemonic"; words: string; passphrase: string }
+  | { type: "xprv"; key: string };
+
 export interface SavedBondCert {
   id: string;
   created_at: number;
@@ -20,6 +24,7 @@ export interface SavedBond {
   timelock_ts: number;
   pubkey_hex: string;
   witness_script_hex: string;
+  key_material?: KeyMaterial;
   certs: SavedBondCert[];
 }
 
