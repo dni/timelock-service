@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import Footer from "../Footer";
 import { getOrder, getOrderPreimage, orderStatusWebSocketUrl, requestBond, type Order } from "../api";
@@ -67,6 +67,60 @@ export default function OrderPage() {
     }
   }
 
+  // Imperative WebSocket — avoids reactive effect loops when the server closes the connection frequently.
+  let wsClosed = false;
+  let wsRef: WebSocket | null = null;
+
+  function closeWs() {
+    wsClosed = true;
+    if (wsRef) { wsRef.close(); wsRef = null; }
+  }
+
+  function openWs(orderId: string) {
+    closeWs();
+    wsClosed = false;
+    const ws = new WebSocket(orderStatusWebSocketUrl(orderId));
+    wsRef = ws;
+
+    ws.onmessage = (event) => {
+      try {
+        const updated = JSON.parse(event.data) as Order;
+        setOrder(updated);
+        if (updated.state === "PAID") {
+          void savePaidPreimage(updated.order_id);
+          setStep("decrypt");
+          closeWs();
+        } else if (updated.state === "EXPIRED") {
+          setError("Invoice expired. Go back and try again.");
+          closeWs();
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    };
+
+    ws.onclose = async () => {
+      if (wsClosed) return;
+      // Server closed the connection — do a single HTTP check; don't reconnect.
+      try {
+        const updated = await getOrder(orderId);
+        setOrder(updated);
+        if (updated.state === "PAID") {
+          await savePaidPreimage(updated.order_id);
+          setStep("decrypt");
+        } else if (updated.state === "EXPIRED") {
+          setError("Invoice expired. Go back and try again.");
+        }
+      } catch {
+        setError("Payment status connection closed. Refresh to check the order.");
+      }
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  onCleanup(closeWs);
+
   async function loadExistingOrder(id: string) {
     setError("");
     setLoading(true);
@@ -81,63 +135,16 @@ export default function OrderPage() {
       if (existing.state === "PAID") {
         await savePaidPreimage(existing.order_id);
         setStep("decrypt");
-      } else setStep("invoice");
+      } else {
+        setStep("invoice");
+        openWs(existing.order_id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   }
-
-  // Watch this order over the service websocket while waiting for payment.
-  // untrack(order) so setOrder() in ws.onmessage doesn't retrigger this effect and cause reconnect loops.
-  createEffect(() => {
-    if (step() !== "invoice") return;
-    const o = untrack(() => order());
-    if (!o) return;
-
-    let closed = false;
-    const ws = new WebSocket(orderStatusWebSocketUrl(o.order_id));
-
-    ws.onmessage = (event) => {
-      try {
-        const updated = JSON.parse(event.data) as Order;
-        setOrder(updated);
-        if (updated.state === "PAID") {
-          void savePaidPreimage(updated.order_id);
-          setStep("decrypt");
-        } else if (updated.state === "EXPIRED") {
-          setError("Invoice expired. Go back and try again.");
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    };
-
-    ws.onclose = async () => {
-      if (closed || step() !== "invoice") return;
-      try {
-        const updated = await getOrder(o.order_id);
-        setOrder(updated);
-        if (updated.state === "PAID") {
-          await savePaidPreimage(updated.order_id);
-          setStep("decrypt");
-        }
-        if (updated.state === "EXPIRED") setError("Invoice expired. Go back and try again.");
-      } catch {
-        setError("Payment status connection closed. Refresh this page to check the order.");
-      }
-    };
-
-    ws.onerror = () => {
-      ws.close();
-    };
-
-    onCleanup(() => {
-      closed = true;
-      ws.close();
-    });
-  });
 
   async function submitNpub(e: Event) {
     e.preventDefault();
