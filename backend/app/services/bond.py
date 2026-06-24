@@ -115,10 +115,10 @@ class BondService:
         preimage_r = os.urandom(32)
         preimage_hash = hashlib.sha256(preimage_r).hexdigest()
 
-        bond_sig = sign_bond_cert(settings.bip46_xprv, bond.timelock_index, npub_hex, bond.timelock_expiry)
+        cert_sig = sign_bond_cert(settings.bip46_xprv, bond.timelock_index, npub_hex, bond.timelock_expiry)
         cert_data = {
-            "bond_sig": bond_sig,
-            "xpub": settings.bip46_xpub,
+            "beneficiary_pubkey": npub_hex,
+            "cert_sig": cert_sig,
             "utxo": bond.utxo,
             "timelock_index": bond.timelock_index,
             "expiry": bond.timelock_expiry,
@@ -208,6 +208,14 @@ class BondService:
             logger.warning("LNbits payment %s returned a preimage with invalid length", payment_hash)
             return None
         return preimage
+
+    async def get_paid_order_preimage(self, order_id: str) -> str:
+        order = await self.orders.get_by_id(order_id)
+        if not order:
+            raise ValueError("Order not found")
+        if order.state != OrderState.PAID:
+            raise ValueError("Order is not paid")
+        return _decrypt_preimage(order.preimage_r_enc).hex()
 
     async def build_lud10_success_action(self, order: BondOrder) -> AesAction:
         if not order.encrypted_cert or not order.cert_nonce:

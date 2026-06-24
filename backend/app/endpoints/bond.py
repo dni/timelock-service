@@ -34,6 +34,7 @@ def _order_status_response(order) -> BondStatusResponse:
     return BondStatusResponse(
         order_id=order.id,
         state=order.state,
+        beneficiary_pubkey=order.beneficiary_npub,
         invoice=order.payment_request,
         lnurl=_lnurl(order.id),
         lnurl_pay_url=_lnurl_pay_url(order.id),
@@ -64,6 +65,7 @@ async def request_bond(body: BondRequestBody, session: AsyncSession = Depends(ge
     return BondOrderResponse(
         order_id=order.id,
         state=order.state,
+        beneficiary_pubkey=order.beneficiary_npub,
         invoice=order.payment_request,
         lnurl=_lnurl(order.id),
         lnurl_pay_url=_lnurl_pay_url(order.id),
@@ -87,6 +89,15 @@ async def get_bond_status(order_id: str, session: AsyncSession = Depends(get_ses
         raise HTTPException(status_code=404, detail="Order not found")
 
     return _order_status_response(order)
+
+
+@router.get("/{order_id}/preimage")
+async def get_bond_preimage(order_id: str, session: AsyncSession = Depends(get_session)):
+    svc = BondService(session)
+    try:
+        return {"preimage": await svc.get_paid_order_preimage(order_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.websocket("/{order_id}/ws")

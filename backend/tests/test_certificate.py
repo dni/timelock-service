@@ -1,6 +1,6 @@
 """
-Validates bond_sig signing against TypeScript reference from timelock-wallet.
-The key invariant: identical inputs must produce identical bond_sig output.
+Validates cert_sig signing against TypeScript reference from timelock-wallet.
+The key invariant: identical inputs must produce identical cert_sig output.
 Run: pytest tests/test_certificate.py -v
 """
 import base64
@@ -60,14 +60,14 @@ def test_sign_bond_cert_format():
 
     from app.crypto.certificate import sign_bond_cert
 
-    bond_sig = sign_bond_cert(
+    cert_sig = sign_bond_cert(
         xprv=xprv,
         index=72,
         npub_hex="a" * 64,
         expiry=1767225600,
     )
 
-    sig_bytes = base64.b64decode(bond_sig)
+    sig_bytes = base64.b64decode(cert_sig)
     assert len(sig_bytes) == 65
     # Header byte must be in range 0x1f..0x22 (31..34)
     assert 0x1F <= sig_bytes[0] <= 0x22
@@ -113,7 +113,7 @@ def test_lud10_success_action_encrypts_aes_cbc_payload():
 
     from app.crypto.aes import encrypt_lud10_success_action
 
-    message = '{"bond_sig":"sig","xpub":"xpub"}'
+    message = '{"beneficiary_pubkey":"pubkey","cert_sig":"sig"}'
     preimage_r = os.urandom(32)
     ciphertext_b64, iv_b64 = encrypt_lud10_success_action(message, preimage_r)
 

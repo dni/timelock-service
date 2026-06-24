@@ -1,6 +1,6 @@
 """
 Port of timelock-wallet/src/lib/certificate.ts.
-Produces bond_sig: Bitcoin-message-signed secp256k1 signature over the cert message.
+Produces cert_sig: Bitcoin-message-signed secp256k1 signature over the cert message.
 """
 import base64
 import hashlib
@@ -42,7 +42,7 @@ def build_cert_message(npub_hex: str, expiry: int) -> str:
 def sign_bond_cert(xprv: str, index: int, npub_hex: str, expiry: int) -> str:
     """
     Port of signCertificate() from certificate.ts.
-    Returns bond_sig: base64-encoded 65-byte signature (1-byte header + 64-byte compact sig).
+    Returns cert_sig: base64-encoded 65-byte signature (1-byte header + 64-byte compact sig).
     Header byte = 0x1f + recovery (mirrors the TypeScript: 0x1f + sig.recovery).
     """
     path = lockindex_to_derivation_path(index, network="mainnet")

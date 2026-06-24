@@ -26,13 +26,22 @@ export default function BondList() {
       <header class="site-header">
         <h1>Timelock</h1>
         <p class="subtitle">NIP-600 fidelity bond certificates over Lightning</p>
-        <button
-          type="button"
-          class="btn-secondary nav-action"
-          onClick={() => navigate("/certificates")}
-        >
-          My Certificates
-        </button>
+        <div class="button-row" style={{ "justify-content": "center", "margin-top": "1rem" }}>
+          <button
+            type="button"
+            class="btn-secondary"
+            onClick={() => navigate("/certificates")}
+          >
+            My Certificates
+          </button>
+          <button
+            type="button"
+            class="btn-secondary"
+            onClick={() => navigate("/import")}
+          >
+            Import Certificate
+          </button>
+        </div>
       </header>
 
       <Show when={bonds.loading}>

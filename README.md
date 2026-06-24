@@ -108,8 +108,8 @@ curl http://localhost:8000/api/v1/bond/{order_id}
 When `state` is `PAID`, ask the user for the Lightning payment preimage from
 their wallet. Decrypt `encrypted_cert` with AES-256-GCM using the preimage as
 the 32-byte key and `cert_nonce` as the nonce. The decrypted JSON contains
-`bond_sig`, `xpub`, `utxo`, `timelock_index`, and `expiry` — the fields needed
-to assemble and publish the NIP-600 event.
+`beneficiary_pubkey`, `cert_sig`, `utxo`, `timelock_index`, and `expiry` — the
+fields needed to assemble and publish the NIP-600 event.
 
 ### LNURL / Lightning Address Flow
 
@@ -252,15 +252,17 @@ AES-CBC encryption, and Nostr pubkey normalization.
 - BIP46 indexes map month-by-month from January 2020 (index `0`) through
   December 2099 (index `959`).
 - The private signing derivation path is `m/84h/0h/0h/2/{index}`.
-- Public verification derives from the account xpub at `m/2/{index}`.
+- Relays recover the Bitcoin pubkey from `cert_sig` and derive the expected
+  timelocked address; the published NIP-600 event does not include an xpub.
 - Certificates are signed over:
 
   ```
   fidelity-bond-cert|{npub_hex}|{expiry}
   ```
 
-- Certificate payloads contain `bond_sig`, `xpub`, `utxo`, `timelock_index`,
-  and `expiry`.
+- Certificate payloads contain `beneficiary_pubkey`, `cert_sig`, `utxo`,
+  `timelock_index`, and `expiry`. The published NIP-600 event uses
+  `beneficiary_pubkey` for both the `d` and `p` tags.
 - The `lnurl` PyPI package provides AES-CBC primitives for LUD-10 success
   actions (`lnurl.helpers.aes_encrypt`).
 - The `bip46` and `bip32` PyPI packages handle HD key derivation and witness

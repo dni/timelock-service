@@ -28,6 +28,7 @@ class BondRequestBody(BaseModel):
 class BondOrderResponse(BaseModel):
     order_id: str
     state: str
+    beneficiary_pubkey: str
     invoice: str
     lnurl: str
     lnurl_pay_url: str
@@ -47,6 +48,7 @@ class BondOrderResponse(BaseModel):
 class BondStatusResponse(BaseModel):
     order_id: str
     state: str
+    beneficiary_pubkey: str
     invoice: str
     lnurl: str
     lnurl_pay_url: str

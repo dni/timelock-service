@@ -16,6 +16,7 @@ export interface Bond {
 export interface Order {
   order_id: string;
   state: "PENDING_PAYMENT" | "PAID" | "EXPIRED";
+  beneficiary_pubkey: string;
   invoice: string;
   lnurl: string;
   lnurl_pay_url: string;
@@ -55,6 +56,9 @@ export const requestBond = (bond_id: string, npub: string) =>
 
 export const getOrder = (order_id: string) =>
   apiFetch<Order>(`/bond/${order_id}`);
+
+export const getOrderPreimage = (order_id: string) =>
+  apiFetch<{ preimage: string }>(`/bond/${order_id}/preimage`);
 
 export function orderStatusWebSocketUrl(order_id: string) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";

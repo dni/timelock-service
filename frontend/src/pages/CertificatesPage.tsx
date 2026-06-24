@@ -82,12 +82,20 @@ export default function CertificatesPage() {
                       <dt>Order</dt>
                       <dd class="mono-short">{item.order_id.slice(0, 8)}…</dd>
                     </div>
+                    <div>
+                      <dt>Preimage</dt>
+                      <dd>{item.preimage_hex ? "Saved locally" : "Not saved"}</dd>
+                    </div>
                     <Show when={item.order}>
                       {(order) => (
                         <>
                           <div>
                             <dt>Amount</dt>
                             <dd class="accent">{sats(order().price_sats)}</dd>
+                          </div>
+                          <div>
+                            <dt>Payment hash</dt>
+                            <dd class="mono-short">{order().payment_hash.slice(0, 8)}…</dd>
                           </div>
                           <div>
                             <dt>Expires</dt>

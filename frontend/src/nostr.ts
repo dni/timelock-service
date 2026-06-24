@@ -1,7 +1,21 @@
+export interface NostrUnsignedEvent {
+  kind: number;
+  created_at: number;
+  tags: string[][];
+  content: string;
+}
+
+export interface NostrSignedEvent extends NostrUnsignedEvent {
+  id: string;
+  pubkey: string;
+  sig: string;
+}
+
 declare global {
   interface Window {
     nostr?: {
       getPublicKey?: () => Promise<string>;
+      signEvent?: (event: NostrUnsignedEvent) => Promise<NostrSignedEvent>;
     };
   }
 }
@@ -67,4 +81,49 @@ export function hexToNpub(hex: string) {
 export async function getExtensionNpub() {
   const pubkey = await window.nostr?.getPublicKey?.();
   return pubkey ? hexToNpub(pubkey) : null;
+}
+
+export function npubToHex(npub: string): string {
+  if (!npub.toLowerCase().startsWith("npub1"))
+    throw new Error("Not an npub bech32 string");
+  const lower = npub.toLowerCase();
+  const sep = lower.lastIndexOf("1");
+  const data5: number[] = [];
+  for (let i = sep + 1; i < lower.length - 6; i++) {
+    const v = CHARSET.indexOf(lower[i]);
+    if (v < 0) throw new Error(`Invalid bech32 character: ${lower[i]}`);
+    data5.push(v);
+  }
+  const bytes = convertBits(data5, 5, 8, false);
+  return bytes.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function pubkeyHexFromInput(input: string): string {
+  const s = input.trim();
+  if (s.startsWith("npub1")) return npubToHex(s);
+  if (/^[0-9a-fA-F]{64}$/.test(s)) return s.toLowerCase();
+  throw new Error("Expected npub1… or 64-char hex pubkey");
+}
+
+export function publishToRelay(wsUrl: string, event: NostrSignedEvent): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error("Relay timed out"));
+    }, 10000);
+    ws.onopen = () => ws.send(JSON.stringify(["EVENT", event]));
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data as string) as unknown[];
+        if (Array.isArray(msg) && msg[0] === "OK") {
+          clearTimeout(timer);
+          ws.close();
+          if (msg[2]) resolve(typeof msg[3] === "string" ? msg[3] : "Published");
+          else reject(new Error(typeof msg[3] === "string" ? msg[3] : "Relay rejected the event"));
+        }
+      } catch { /* ignore non-EVENT messages */ }
+    };
+    ws.onerror = () => { clearTimeout(timer); reject(new Error("WebSocket error")); };
+  });
 }
