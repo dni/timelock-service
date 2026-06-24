@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.database import create_tables
 from app.endpoints import admin, bond, lnurl, tiers, webhook
@@ -13,6 +14,16 @@ from app.jobs import lnbits_payment_websocket_job, order_expiry_job
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn")
+
+
+class SPAStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404:
+                return await super().get_response("index.html", scope)
+            raise
 
 
 @asynccontextmanager
@@ -61,4 +72,4 @@ async def health():
 
 _STATIC = Path("/app/static")
 if _STATIC.exists():
-    app.mount("/", StaticFiles(directory=str(_STATIC), html=True), name="frontend")
+    app.mount("/", SPAStaticFiles(directory=str(_STATIC), html=True), name="frontend")

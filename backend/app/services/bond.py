@@ -158,11 +158,56 @@ class BondService:
         if not order:
             logger.warning(f"Payment webhook: no order for payment_hash={payment_hash}")
             return
-        if order.state != OrderState.PENDING_PAYMENT:
+        if order.state not in {OrderState.PENDING_PAYMENT, OrderState.PAID}:
             logger.info(f"Order {order.id} already in state {order.state}, skipping")
             return
-        await self.orders.update(order.id, state=OrderState.PAID, paid_at=int(time.time()))
+
+        updates: dict = {"state": OrderState.PAID}
+        if order.paid_at is None:
+            updates["paid_at"] = int(time.time())
+
+        actual_preimage = await self._get_paid_invoice_preimage(payment_hash)
+        if actual_preimage is not None and hashlib.sha256(actual_preimage).hexdigest() != order.preimage_hash:
+            original_preimage = _decrypt_preimage(order.preimage_r_enc)
+            cert_json = decrypt_cert(order.encrypted_cert, order.cert_nonce, original_preimage)
+            encrypted_cert, cert_nonce = encrypt_cert(cert_json, actual_preimage)
+            updates.update(
+                encrypted_cert=encrypted_cert,
+                cert_nonce=cert_nonce,
+                preimage_hash=hashlib.sha256(actual_preimage).hexdigest(),
+                preimage_r_enc=_encrypt_preimage(actual_preimage),
+            )
+
+        if updates.keys() == {"state"} and order.state == OrderState.PAID:
+            logger.info(f"Order {order.id} already in state {order.state}, skipping")
+            return
+
+        await self.orders.update(order.id, **updates)
         logger.info(f"Order {order.id} PAID — cert ready for decryption")
+
+    async def _get_paid_invoice_preimage(self, payment_hash: str) -> bytes | None:
+        try:
+            invoice = await lnbits_client.check_invoice(payment_hash)
+        except Exception as exc:
+            logger.warning("Could not fetch LNbits preimage for %s: %s", payment_hash, exc)
+            return None
+
+        preimage_hex = invoice.get("preimage")
+        details = invoice.get("details")
+        if not preimage_hex and isinstance(details, dict):
+            preimage_hex = details.get("preimage")
+        if not preimage_hex:
+            logger.warning("LNbits payment %s is missing a preimage", payment_hash)
+            return None
+        try:
+            preimage = bytes.fromhex(str(preimage_hex))
+        except ValueError:
+            logger.warning("LNbits payment %s returned a non-hex preimage", payment_hash)
+            return None
+        if len(preimage) != 32:
+            logger.warning("LNbits payment %s returned a preimage with invalid length", payment_hash)
+            return None
+        return preimage
 
     async def build_lud10_success_action(self, order: BondOrder) -> AesAction:
         if not order.encrypted_cert or not order.cert_nonce:
