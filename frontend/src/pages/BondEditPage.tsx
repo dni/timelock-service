@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import { useNavigate, useParams } from "@solidjs/router";
 import {
   listMyBonds, addCertToMyBond, removeCertFromMyBond,
-  type SavedBond,
+  type SavedBond, type KeyMaterial,
 } from "../myBondHistory";
 import CertSignForm from "../CertSignForm";
 import type { Certificate } from "../lib/types";
@@ -18,6 +18,25 @@ export default function BondEditPage() {
 
   const [bond, setBond] = createSignal<SavedBond | null>(loadBond());
   const [certCopied, setCertCopied] = createSignal<string | null>(null);
+
+  // Signing key — pre-fill from stored key_material
+  const storedKm = loadBond()?.key_material;
+  const [keyType, setKeyType] = createSignal<"mnemonic" | "xprv">(
+    storedKm?.type === "xprv" ? "xprv" : "mnemonic"
+  );
+  const [keyWords, setKeyWords] = createSignal(
+    storedKm ? (storedKm.type === "mnemonic" ? storedKm.words : storedKm.key) : ""
+  );
+  const [keyPassphrase, setKeyPassphrase] = createSignal(
+    storedKm?.type === "mnemonic" ? storedKm.passphrase : ""
+  );
+
+  const resolvedKey = (): KeyMaterial | null => {
+    const w = keyWords().trim();
+    if (!w) return null;
+    if (keyType() === "mnemonic") return { type: "mnemonic", words: w, passphrase: keyPassphrase() };
+    return { type: "xprv", key: w };
+  };
 
   function reload() { setBond(loadBond()); }
 
@@ -105,6 +124,51 @@ export default function BondEditPage() {
               </div>
             </div>
 
+            {/* Signing key */}
+            <div class="card" style={{ "margin-top": "1.25rem" }}>
+              <p class="card-section-title" style={{ "margin-bottom": "0.75rem" }}>Signing key</p>
+              <div class="page-tabs" style={{ "margin-bottom": "0.75rem" }}>
+                <button
+                  type="button"
+                  class={`page-tab${keyType() === "mnemonic" ? " active" : ""}`}
+                  onClick={() => setKeyType("mnemonic")}
+                >Mnemonic</button>
+                <button
+                  type="button"
+                  class={`page-tab${keyType() === "xprv" ? " active" : ""}`}
+                  onClick={() => setKeyType("xprv")}
+                >xprv / zprv</button>
+              </div>
+
+              <Show when={keyType() === "mnemonic"}>
+                <textarea
+                  class="input"
+                  rows={2}
+                  placeholder="12 or 24 BIP39 words"
+                  value={keyWords()}
+                  onInput={(e) => setKeyWords(e.currentTarget.value)}
+                />
+                <input
+                  class="input"
+                  type="password"
+                  placeholder="BIP39 passphrase (optional)"
+                  value={keyPassphrase()}
+                  onInput={(e) => setKeyPassphrase(e.currentTarget.value)}
+                  style={{ "margin-top": "0.5rem" }}
+                />
+              </Show>
+
+              <Show when={keyType() === "xprv"}>
+                <input
+                  class="input"
+                  type="password"
+                  placeholder="xprv… or zprv… (master or account level)"
+                  value={keyWords()}
+                  onInput={(e) => setKeyWords(e.currentTarget.value)}
+                />
+              </Show>
+            </div>
+
             {/* Certificate list */}
             <div class="card" style={{ "margin-top": "1.25rem" }}>
               <p class="card-section-title" style={{ "margin-bottom": "0.75rem" }}>
@@ -162,12 +226,23 @@ export default function BondEditPage() {
             {/* Add certificate */}
             <div class="card" style={{ "margin-top": "1.25rem" }}>
               <p class="card-section-title" style={{ "margin-bottom": "0.75rem" }}>Add certificate</p>
-              <CertSignForm
-                bondIndex={b().bond_index}
-                bondLockDate={b().bond_lock_date}
-                initialKeyMaterial={b().key_material}
-                onSigned={onSigned}
-              />
+              <Show
+                when={resolvedKey()}
+                fallback={
+                  <p class="muted" style={{ "font-size": "0.875rem" }}>
+                    Enter your signing key above to add certificates.
+                  </p>
+                }
+              >
+                {(km) => (
+                  <CertSignForm
+                    bondIndex={b().bond_index}
+                    bondLockDate={b().bond_lock_date}
+                    keyMaterial={km()}
+                    onSigned={onSigned}
+                  />
+                )}
+              </Show>
             </div>
           </>
         )}

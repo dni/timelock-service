@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { bech32 } from "@scure/base";
 import { bytesToHex } from "@noble/hashes/utils";
 import { signCertificate, signCertificateFromXprv, currentBlockPeriod, periodToApproxDate } from "./lib/certificate";
@@ -28,34 +28,18 @@ function resolveNpub(raw: string): string {
 interface Props {
   bondIndex: number;
   bondLockDate: string;
+  keyMaterial: KeyMaterial;
   onSigned: (cert: Certificate) => void;
   onCancel?: () => void;
-  initialKeyMaterial?: KeyMaterial;
 }
 
 export default function CertSignForm(props: Props) {
   const [nostrPubkey, setNostrPubkey] = createSignal("");
   const [npubStatus, setNpubStatus] = createSignal("");
   const [expiryPreset, setExpiryPreset] = createSignal(0);
-  const [keyType, setKeyType] = createSignal<"mnemonic" | "xprv">("mnemonic");
-  const [keyInput, setKeyInput] = createSignal("");
-  const [passphrase, setPassphrase] = createSignal("");
   const [error, setError] = createSignal("");
   const [cert, setCert] = createSignal<Certificate | null>(null);
   const [copied, setCopied] = createSignal(false);
-
-  onMount(() => {
-    const km = props.initialKeyMaterial;
-    if (!km) return;
-    if (km.type === "mnemonic") {
-      setKeyType("mnemonic");
-      setKeyInput(km.words);
-      setPassphrase(km.passphrase);
-    } else {
-      setKeyType("xprv");
-      setKeyInput(km.key);
-    }
-  });
 
   async function fillFromExtension() {
     if (!window.nostr?.getPublicKey) {
@@ -81,15 +65,15 @@ export default function CertSignForm(props: Props) {
     try {
       const pubkeyHex = resolveNpub(nostrPubkey());
       const expiry = currentBlockPeriod() + EXPIRY_PRESETS[expiryPreset()].periods;
+      const km = props.keyMaterial;
       let c: Certificate;
-      if (keyType() === "mnemonic") {
-        const words = keyInput().trim();
-        if (!validateMnemonic(words)) throw new Error("Invalid mnemonic — check word spelling and count");
-        c = signCertificate(words, passphrase(), props.bondIndex, pubkeyHex, "", expiry);
+      if (km.type === "mnemonic") {
+        if (!validateMnemonic(km.words)) throw new Error("Invalid mnemonic — check word spelling and count");
+        c = signCertificate(km.words, km.passphrase, props.bondIndex, pubkeyHex, "", expiry);
       } else {
-        const err = validateXprv(keyInput());
+        const err = validateXprv(km.key);
         if (err) throw new Error(err);
-        c = signCertificateFromXprv(keyInput().trim(), props.bondIndex, pubkeyHex, "", expiry);
+        c = signCertificateFromXprv(km.key, props.bondIndex, pubkeyHex, "", expiry);
       }
       setCert(c);
       props.onSigned(c);
@@ -117,7 +101,6 @@ export default function CertSignForm(props: Props) {
   return (
     <div>
       <form onSubmit={sign}>
-        {/* ── Cert fields (mirrors WalletPage Step 3) ── */}
         <div class="field">
           <label class="label">Nostr pubkey to certify</label>
           <div style={{ display: "flex", gap: "0.5rem", "align-items": "flex-start" }}>
@@ -161,51 +144,6 @@ export default function CertSignForm(props: Props) {
           </select>
         </div>
 
-        {/* ── Private key (below cert fields) ── */}
-        <div class="field">
-          <label class="label">Sign with</label>
-          <div class="page-tabs" style={{ "margin-bottom": "0.75rem" }}>
-            <button
-              type="button"
-              class={`page-tab${keyType() === "mnemonic" ? " active" : ""}`}
-              onClick={() => setKeyType("mnemonic")}
-            >Mnemonic</button>
-            <button
-              type="button"
-              class={`page-tab${keyType() === "xprv" ? " active" : ""}`}
-              onClick={() => setKeyType("xprv")}
-            >xprv / zprv</button>
-          </div>
-
-          <Show when={keyType() === "mnemonic"}>
-            <textarea
-              class="input"
-              rows={2}
-              placeholder="12 or 24 BIP39 words"
-              value={keyInput()}
-              onInput={(e) => setKeyInput(e.currentTarget.value)}
-            />
-            <input
-              class="input"
-              type="password"
-              placeholder="BIP39 passphrase (optional)"
-              value={passphrase()}
-              onInput={(e) => setPassphrase(e.currentTarget.value)}
-              style={{ "margin-top": "0.5rem" }}
-            />
-          </Show>
-
-          <Show when={keyType() === "xprv"}>
-            <input
-              class="input"
-              type="password"
-              placeholder="xprv… or zprv… (master or account level)"
-              value={keyInput()}
-              onInput={(e) => setKeyInput(e.currentTarget.value)}
-            />
-          </Show>
-        </div>
-
         <Show when={error()}>
           <p class="error-text">{error()}</p>
         </Show>
@@ -218,7 +156,6 @@ export default function CertSignForm(props: Props) {
         </div>
       </form>
 
-      {/* ── Result ── */}
       <Show when={cert()}>
         {(c) => (
           <div class="generated-mnemonic" style={{ "margin-top": "1.25rem" }}>
