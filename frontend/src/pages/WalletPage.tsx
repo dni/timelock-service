@@ -6,7 +6,7 @@ import Footer from "../Footer";
 import { deriveBonds, deriveBondsFromXpub, deriveBondFromXprv } from "../lib/timelock";
 import { generateMnemonic, validateMnemonic, validateXpub, validateXprv } from "../lib/wallet";
 import { signCertificate, signCertificateFromXprv, currentBlockPeriod, periodToApproxDate } from "../lib/certificate";
-import { saveMyBond, type SavedBond } from "../myBondHistory";
+import { saveMyBond, addCertToMyBond, type SavedBond } from "../myBondHistory";
 import type { TimelockBond, Certificate } from "../lib/types";
 
 const MONTHS = [
@@ -71,6 +71,7 @@ export default function WalletPage() {
       timelock_ts: b.timelockTs,
       pubkey_hex: b.pubkeyHex,
       witness_script_hex: b.witnessScriptHex,
+      certs: [],
     };
   }
 
@@ -111,6 +112,7 @@ export default function WalletPage() {
     setCertError("");
     setCert(null);
     setCertSaved(false);
+    setCertCopied(false);
     const b = bond();
     if (!b) return;
     try {
@@ -136,18 +138,23 @@ export default function WalletPage() {
     const b = bond();
     const c = cert();
     if (!b || !c) return;
-    const base = makeSavedBond(b);
-    saveMyBond({
-      ...base,
-      cert: {
-        nostr_pubkey_hex: c.certPubkeyHex,
-        bond_pubkey_hex: c.bondPubkeyHex,
-        cert_expiry: c.certExpiry,
-        cert_expiry_date: c.expiryApproxDate,
-        message: c.message,
-        signature_base64: c.signatureBase64,
-      },
-    });
+    const newCert = {
+      id: crypto.randomUUID(),
+      created_at: Math.floor(Date.now() / 1000),
+      nostr_pubkey_hex: c.certPubkeyHex,
+      bond_pubkey_hex: c.bondPubkeyHex,
+      cert_expiry: c.certExpiry,
+      cert_expiry_date: c.expiryApproxDate,
+      message: c.message,
+      signature_base64: c.signatureBase64,
+    };
+    const existingId = savedBondId();
+    if (existingId) {
+      addCertToMyBond(existingId, newCert);
+    } else {
+      const base = makeSavedBond(b);
+      saveMyBond({ ...base, certs: [newCert] });
+    }
     setBondSaved(true);
     setCertSaved(true);
   }

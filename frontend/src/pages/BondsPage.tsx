@@ -69,24 +69,6 @@ export default function BondsPage() {
 
   return (
     <div class="page page--wide">
-      <button class="btn-back" type="button" onClick={() => navigate("/")}>← Back</button>
-
-      <div class="page-tabs">
-        <button
-          type="button"
-          class={`page-tab${tab() === "bonds" ? " active" : ""}`}
-          onClick={() => setTab("bonds")}
-        >
-          Bonds
-        </button>
-        <button
-          type="button"
-          class={`page-tab${tab() === "certs" ? " active" : ""}`}
-          onClick={() => setTab("certs")}
-        >
-          My Certificates
-        </button>
-      </div>
 
       {/* ── Bonds tab ── */}
       <Show when={tab() === "bonds"}>

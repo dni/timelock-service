@@ -15,8 +15,11 @@ run:
 	docker stop $(CONTAINER_NAME) 2>/dev/null || true
 	docker rm $(CONTAINER_NAME) 2>/dev/null || true
 	docker run --restart always -d --name $(CONTAINER_NAME) \
-		-p $(PORT):8000 \
+		--network host \
 		--env-file .env \
 		-v $(PWD)/backend/data:/app/data \
-		$(IMAGE_NAME)
+		$(IMAGE_NAME) \
+		uv run --frozen --no-dev uvicorn app.main:app \
+		--host 0.0.0.0 --port $(PORT) \
+		--proxy-headers --forwarded-allow-ips='*'
 	@echo "Container $(CONTAINER_NAME) is running at http://localhost:$(PORT)"

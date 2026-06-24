@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import Footer from "../Footer";
 import { getOrder, getOrderPreimage, orderStatusWebSocketUrl, requestBond, type Order } from "../api";
@@ -48,22 +48,22 @@ export default function OrderPage() {
 
   onMount(() => {
     if (orderId()) void loadExistingOrder(orderId());
-    else void prefillFromNostr();
   });
 
   async function prefillFromNostr() {
     if (!window.nostr?.getPublicKey) {
-      setNostrStatus("No Nostr extension detected.");
+      setNostrStatus("No Nostr extension detected. Install Alby or nos2x.");
       return;
     }
     try {
+      setNostrStatus("Requesting pubkey…");
       const npub = await getExtensionNpub();
       if (npub) {
         setNpub(npub);
-        setNostrStatus("Nostr extension connected.");
+        setNostrStatus("Pubkey loaded from extension.");
       }
     } catch {
-      setNostrStatus("Nostr extension access was not approved.");
+      setNostrStatus("Extension access was not approved.");
     }
   }
 
@@ -90,9 +90,10 @@ export default function OrderPage() {
   }
 
   // Watch this order over the service websocket while waiting for payment.
+  // untrack(order) so setOrder() in ws.onmessage doesn't retrigger this effect and cause reconnect loops.
   createEffect(() => {
     if (step() !== "invoice") return;
-    const o = order();
+    const o = untrack(() => order());
     if (!o) return;
 
     let closed = false;

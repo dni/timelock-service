@@ -2,7 +2,7 @@ import { createResource, createSignal, For, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { getOrder, type Order } from "../api";
 import { listSavedOrders, removeOrder, type SavedOrder } from "../orderHistory";
-import { listCertifiedBonds, removeMyBond, type SavedBond } from "../myBondHistory";
+import { listCertifiedBonds, removeCertFromMyBond, type SavedBond, type SavedBondCert } from "../myBondHistory";
 import Footer from "../Footer";
 
 type SavedOrderWithStatus = SavedOrder & { order: Order | null; error: string | null };
@@ -33,12 +33,18 @@ export default function CertificatesPage() {
     void refetch();
   }
 
-  function forgetSelfCert(id: string) {
-    removeMyBond(id);
+  function forgetCert(bondId: string, certId: string) {
+    removeCertFromMyBond(bondId, certId);
     setSelfCerts(listCertifiedBonds());
   }
 
-  const hasSelf = () => selfCerts().length > 0;
+  // flatten bonds → individual cert rows for display
+  const certRows = () =>
+    selfCerts().flatMap((bond) =>
+      bond.certs.map((cert) => ({ bond, cert })),
+    );
+
+  const hasSelf = () => certRows().length > 0;
   const hasService = () => (orders() ?? []).length > 0;
   const hasAny = () => hasSelf() || hasService();
 
@@ -66,70 +72,63 @@ export default function CertificatesPage() {
       <Show when={hasSelf()}>
         <p class="card-section-title" style={{ "margin-bottom": "0.75rem" }}>Self-signed</p>
         <div class="bond-grid">
-          <For each={selfCerts()}>
-            {(bond) => {
-              const cert = bond.cert!;
-              return (
-                <div class="bond-card">
-                  <div class="bond-card-header">
-                    <h2>Self-signed cert</h2>
-                    <span class="badge badge-available">signed</span>
-                  </div>
-                  <dl class="stats">
-                    <div>
-                      <dt>Nostr pubkey</dt>
-                      <dd class="mono-short">{cert.nostr_pubkey_hex.slice(0, 16)}…</dd>
-                    </div>
-                    <div>
-                      <dt>Bond lock date</dt>
-                      <dd>{bond.bond_lock_date}</dd>
-                    </div>
-                    <div>
-                      <dt>Cert expires ~</dt>
-                      <dd class="accent">{cert.cert_expiry_date}</dd>
-                    </div>
-                    <div>
-                      <dt>Bond index</dt>
-                      <dd>{bond.bond_index}</dd>
-                    </div>
-                  </dl>
-                  <div class="button-row">
-                    <button
-                      type="button"
-                      class="btn-primary"
-                      onClick={() =>
-                        navigator.clipboard.writeText(
-                          JSON.stringify({
-                            message: cert.message,
-                            bond_pubkey: cert.bond_pubkey_hex,
-                            cert_pubkey: cert.nostr_pubkey_hex,
-                            cert_expiry: cert.cert_expiry,
-                            expiry_approx_date: cert.cert_expiry_date,
-                            signature: cert.signature_base64,
-                          }, null, 2),
-                        )
-                      }
-                    >
-                      Copy JSON
-                    </button>
-                    <button
-                      type="button"
-                      class="btn-secondary"
-                      onClick={() => navigate("/my-bonds")}
-                    >
-                      View bond
-                    </button>
-                    <button
-                      type="button"
-                      class="btn-secondary"
-                      onClick={() => forgetSelfCert(bond.id)}
-                    >
-                      Remove
-                    </button>
-                  </div>
+          <For each={certRows()}>
+            {({ bond, cert }) => (
+              <div class="bond-card">
+                <div class="bond-card-header">
+                  <h2>Self-signed cert</h2>
+                  <span class="badge badge-available">signed</span>
                 </div>
-              );
-            }}
+                <dl class="stats">
+                  <div>
+                    <dt>Nostr pubkey</dt>
+                    <dd class="mono-short">{cert.nostr_pubkey_hex.slice(0, 16)}…</dd>
+                  </div>
+                  <div>
+                    <dt>Bond #{bond.bond_index}</dt>
+                    <dd>{bond.bond_lock_date}</dd>
+                  </div>
+                  <div>
+                    <dt>Cert expires ~</dt>
+                    <dd class="accent">{cert.cert_expiry_date}</dd>
+                  </div>
+                </dl>
+                <div class="button-row">
+                  <button
+                    type="button"
+                    class="btn-primary"
+                    onClick={() =>
+                      navigator.clipboard.writeText(
+                        JSON.stringify({
+                          message: cert.message,
+                          bond_pubkey: cert.bond_pubkey_hex,
+                          cert_pubkey: cert.nostr_pubkey_hex,
+                          cert_expiry: cert.cert_expiry,
+                          expiry_approx_date: cert.cert_expiry_date,
+                          signature: cert.signature_base64,
+                        }, null, 2),
+                      )
+                    }
+                  >
+                    Copy JSON
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    onClick={() => navigate("/my-bonds")}
+                  >
+                    View bond
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-secondary"
+                    onClick={() => forgetCert(bond.id, cert.id)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )}
           </For>
         </div>
       </Show>

@@ -1,6 +1,11 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { listMyBonds, removeMyBond, type SavedBond } from "../myBondHistory";
+import {
+  listMyBonds, removeMyBond, removeCertFromMyBond, addCertToMyBond,
+  type SavedBond,
+} from "../myBondHistory";
+import CertSignForm from "../CertSignForm";
+import type { Certificate } from "../lib/types";
 import Footer from "../Footer";
 
 interface Utxo {
@@ -30,30 +35,45 @@ async function checkFunding(address: string): Promise<FundingStatus> {
   }
 }
 
-function formatSats(n: number) {
-  return n.toLocaleString() + " sats";
-}
-
 function formatBtc(n: number) {
   return (n / 1e8).toFixed(8) + " BTC";
 }
+
 
 export default function MyBondsPage() {
   const navigate = useNavigate();
   const [bonds, setBonds] = createSignal<SavedBond[]>(listMyBonds());
   const [funding, setFunding] = createSignal<Record<string, FundingStatus>>({});
 
-  function reload() {
-    setBonds(listMyBonds());
-  }
+  const [activeForm, setActiveForm] = createSignal<string | null>(null);
+
+  function openForm(bondId: string) { setActiveForm(bondId); }
+  function closeForm() { setActiveForm(null); }
+
+  function reload() { setBonds(listMyBonds()); }
 
   function forget(id: string) {
     removeMyBond(id);
     reload();
   }
 
+  function onSigned(bondId: string, cert: Certificate) {
+    addCertToMyBond(bondId, {
+      id: crypto.randomUUID(),
+      created_at: Math.floor(Date.now() / 1000),
+      nostr_pubkey_hex: cert.certPubkeyHex,
+      bond_pubkey_hex: cert.bondPubkeyHex,
+      cert_expiry: cert.certExpiry,
+      cert_expiry_date: cert.expiryApproxDate,
+      message: cert.message,
+      signature_base64: cert.signatureBase64,
+    });
+    reload();
+    closeForm();
+  }
+
   async function checkAll(list: SavedBond[]) {
-    setFunding(Object.fromEntries(list.map((b) => [b.id, { state: "loading" }])));
+    setFunding(Object.fromEntries(list.map((b) => [b.id, { state: "loading" as const }])));
     await Promise.all(
       list.map(async (b) => {
         const result = await checkFunding(b.address);
@@ -78,8 +98,6 @@ export default function MyBondsPage() {
 
   return (
     <div class="page page--wide">
-      <button class="btn-back" type="button" onClick={() => navigate("/")}>← Back</button>
-
       <div style={{ display: "flex", "align-items": "center", gap: "1rem", "margin-bottom": "1.5rem", "flex-wrap": "wrap" }}>
         <h2 class="order-title" style={{ margin: 0 }}>My Bonds</h2>
         <div style={{ display: "flex", gap: "0.5rem", "margin-left": "auto" }}>
@@ -109,6 +127,7 @@ export default function MyBondsPage() {
           <For each={bonds()}>
             {(bond) => {
               const fs = () => funding()[bond.id];
+              const isOpen = () => activeForm() === bond.id;
               return (
                 <div class="bond-card">
                   <div class="bond-card-header">
@@ -163,44 +182,81 @@ export default function MyBondsPage() {
                     </button>
                   </div>
 
-                  <Show when={bond.cert}>
-                    {(cert) => (
-                      <div class="cert-inline">
-                        <p class="card-section-title" style={{ "margin-bottom": "0.4rem" }}>Certificate</p>
-                        <dl class="stats">
-                          <div>
-                            <dt>Nostr pubkey</dt>
-                            <dd class="mono-short">{cert().nostr_pubkey_hex.slice(0, 16)}…</dd>
+                  {/* Certificate list */}
+                  <Show when={bond.certs.length > 0}>
+                    <div style={{ "margin-top": "0.75rem" }}>
+                      <p class="card-section-title" style={{ "margin-bottom": "0.5rem" }}>
+                        Certificates ({bond.certs.length})
+                      </p>
+                      <For each={bond.certs}>
+                        {(cert) => (
+                          <div class="cert-inline" style={{ "margin-bottom": "0.5rem" }}>
+                            <dl class="stats">
+                              <div>
+                                <dt>Nostr pubkey</dt>
+                                <dd class="mono-short">{cert.nostr_pubkey_hex.slice(0, 16)}…</dd>
+                              </div>
+                              <div>
+                                <dt>Cert expires ~</dt>
+                                <dd class="accent">{cert.cert_expiry_date}</dd>
+                              </div>
+                            </dl>
+                            <div style={{ display: "flex", gap: "0.4rem", "margin-top": "0.5rem", "flex-wrap": "wrap" }}>
+                              <button
+                                type="button"
+                                class="btn-secondary"
+                                onClick={() =>
+                                  navigator.clipboard.writeText(
+                                    JSON.stringify({
+                                      message: cert.message,
+                                      bond_pubkey: cert.bond_pubkey_hex,
+                                      cert_pubkey: cert.nostr_pubkey_hex,
+                                      cert_expiry: cert.cert_expiry,
+                                      expiry_approx_date: cert.cert_expiry_date,
+                                      signature: cert.signature_base64,
+                                    }, null, 2),
+                                  )
+                                }
+                              >
+                                Copy JSON
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-secondary"
+                                onClick={() => { removeCertFromMyBond(bond.id, cert.id); reload(); }}
+                              >
+                                Remove
+                              </button>
+                            </div>
                           </div>
-                          <div>
-                            <dt>Cert expires ~</dt>
-                            <dd>{cert().cert_expiry_date}</dd>
-                          </div>
-                        </dl>
-                        <button
-                          type="button"
-                          class="btn-secondary"
-                          style={{ "margin-top": "0.5rem" }}
-                          onClick={() =>
-                            navigator.clipboard.writeText(
-                              JSON.stringify({
-                                message: cert().message,
-                                bond_pubkey: cert().bond_pubkey_hex,
-                                cert_pubkey: cert().nostr_pubkey_hex,
-                                cert_expiry: cert().cert_expiry,
-                                expiry_approx_date: cert().cert_expiry_date,
-                                signature: cert().signature_base64,
-                              }, null, 2),
-                            )
-                          }
-                        >
-                          Copy cert JSON
-                        </button>
-                      </div>
-                    )}
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
+                  {/* Add certificate inline form */}
+                  <Show when={isOpen()}>
+                    <div class="cert-inline" style={{ "margin-top": "0.75rem" }}>
+                      <p class="card-section-title" style={{ "margin-bottom": "0.75rem" }}>
+                        New certificate · Bond #{bond.bond_index}
+                      </p>
+                      <CertSignForm
+                        bondIndex={bond.bond_index}
+                        bondLockDate={bond.bond_lock_date}
+                        onSigned={(cert) => onSigned(bond.id, cert)}
+                        onCancel={closeForm}
+                      />
+                    </div>
                   </Show>
 
                   <div class="button-row" style={{ "margin-top": "0.75rem" }}>
+                    <button
+                      type="button"
+                      class="btn-primary"
+                      onClick={() => isOpen() ? closeForm() : openForm(bond.id)}
+                    >
+                      {isOpen() ? "Cancel" : "+ Add Certificate"}
+                    </button>
                     <a
                       href={`https://mempool.space/address/${bond.address}`}
                       target="_blank"
