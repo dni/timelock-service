@@ -1,7 +1,10 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { listMyBonds, removeMyBond, type SavedBond } from "../myBondHistory";
+import { listMyBonds, removeMyBond, type SavedBond, type SavedBondCert } from "../myBondHistory";
+import { publishToRelay, type NostrSignedEvent, type NostrUnsignedEvent } from "../nostr";
 import Footer from "../Footer";
+
+const DEFAULT_RELAY = "wss://relay.damus.io";
 
 interface Utxo {
   txid: string;
@@ -34,18 +37,23 @@ function formatBtc(n: number) {
   return (n / 1e8).toFixed(8) + " BTC";
 }
 
-
 export default function MyBondsPage() {
   const navigate = useNavigate();
   const [bonds, setBonds] = createSignal<SavedBond[]>(listMyBonds());
   const [funding, setFunding] = createSignal<Record<string, FundingStatus>>({});
+  const [certCopied, setCertCopied] = createSignal<string | null>(null);
+
+  // Publish state (one cert at a time across all bonds)
+  const [publishCertId, setPublishCertId] = createSignal<string | null>(null);
+  const [signedEvent, setSignedEvent] = createSignal<NostrSignedEvent | null>(null);
+  const [relayUrl, setRelayUrl] = createSignal(DEFAULT_RELAY);
+  const [signing, setSigning] = createSignal(false);
+  const [publishing, setPublishing] = createSignal(false);
+  const [publishResult, setPublishResult] = createSignal("");
+  const [publishError, setPublishError] = createSignal("");
 
   function reload() { setBonds(listMyBonds()); }
-
-  function forget(id: string) {
-    removeMyBond(id);
-    reload();
-  }
+  function forget(id: string) { removeMyBond(id); reload(); }
 
   async function checkAll(list: SavedBond[]) {
     setFunding(Object.fromEntries(list.map((b) => [b.id, { state: "loading" as const }])));
@@ -61,6 +69,94 @@ export default function MyBondsPage() {
     const list = bonds();
     if (list.length > 0) void checkAll(list);
   });
+
+  function copyCert(certId: string, cert: SavedBondCert) {
+    navigator.clipboard.writeText(JSON.stringify({
+      message: cert.message,
+      bond_pubkey: cert.bond_pubkey_hex,
+      cert_pubkey: cert.nostr_pubkey_hex,
+      cert_expiry: cert.cert_expiry,
+      expiry_approx_date: cert.cert_expiry_date,
+      signature: cert.signature_base64,
+    }, null, 2));
+    setCertCopied(certId);
+    setTimeout(() => setCertCopied(null), 2000);
+  }
+
+  function downloadCert(cert: SavedBondCert) {
+    const data = {
+      message: cert.message,
+      bond_pubkey: cert.bond_pubkey_hex,
+      cert_pubkey: cert.nostr_pubkey_hex,
+      cert_expiry: cert.cert_expiry,
+      expiry_approx_date: cert.cert_expiry_date,
+      signature: cert.signature_base64,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cert-${cert.nostr_pubkey_hex.slice(0, 8)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function openPublish(certId: string) {
+    setPublishCertId(certId);
+    setSignedEvent(null);
+    setPublishResult("");
+    setPublishError("");
+  }
+  function closePublish() {
+    setPublishCertId(null);
+    setSignedEvent(null);
+    setPublishResult("");
+    setPublishError("");
+  }
+
+  async function handleSign(cert: SavedBondCert, bond: SavedBond) {
+    if (!window.nostr?.signEvent) {
+      setPublishError("No Nostr extension found. Install Alby or nos2x.");
+      return;
+    }
+    setSigning(true);
+    setPublishError("");
+    try {
+      const unsigned: NostrUnsignedEvent = {
+        kind: 30600,
+        created_at: Math.floor(Date.now() / 1000),
+        tags: [
+          ["d", cert.nostr_pubkey_hex],
+          ["p", cert.nostr_pubkey_hex],
+          ["timelock_index", String(bond.bond_index)],
+          ["expiry", String(cert.cert_expiry)],
+          ["cert_sig", cert.signature_base64],
+        ],
+        content: "",
+      };
+      const signed = await window.nostr.signEvent(unsigned);
+      setSignedEvent(signed);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSigning(false);
+    }
+  }
+
+  async function handlePublish() {
+    const ev = signedEvent();
+    if (!ev) return;
+    setPublishing(true);
+    setPublishResult("");
+    try {
+      const msg = await publishToRelay(relayUrl(), ev);
+      setPublishResult("success:" + (msg || "Published"));
+    } catch (err) {
+      setPublishResult("error:" + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   const fundingBadge = (s: FundingStatus | undefined) => {
     if (!s || s.state === "loading") return <span class="badge badge-pending">checking…</span>;
@@ -168,7 +264,7 @@ export default function MyBondsPage() {
                     </div>
                   </div>
 
-                  {/* Certificate summary (read-only) */}
+                  {/* Certificates with actions */}
                   <Show when={bond.certs.length > 0}>
                     <div style={{ "margin-top": "0.75rem" }}>
                       <p class="card-section-title" style={{ "margin-bottom": "0.5rem" }}>
@@ -176,7 +272,7 @@ export default function MyBondsPage() {
                       </p>
                       <For each={bond.certs}>
                         {(cert) => (
-                          <div class="cert-inline" style={{ "margin-bottom": "0.4rem" }}>
+                          <div class="cert-inline" style={{ "margin-bottom": "0.75rem" }}>
                             <dl class="stats">
                               <div>
                                 <dt>Nostr pubkey</dt>
@@ -187,6 +283,95 @@ export default function MyBondsPage() {
                                 <dd class="accent">{cert.cert_expiry_date}</dd>
                               </div>
                             </dl>
+
+                            <div style={{ display: "flex", gap: "0.5rem", "margin-top": "0.5rem" }}>
+                              <button
+                                type="button"
+                                class="btn-secondary"
+                                style={{ flex: 1 }}
+                                onClick={() => copyCert(cert.id, cert)}
+                              >
+                                {certCopied() === cert.id ? "Copied!" : "Copy"}
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-secondary"
+                                style={{ flex: 1 }}
+                                onClick={() => downloadCert(cert)}
+                              >
+                                Download
+                              </button>
+                              <button
+                                type="button"
+                                class="btn-secondary"
+                                style={{ flex: 1 }}
+                                onClick={() =>
+                                  publishCertId() === cert.id ? closePublish() : openPublish(cert.id)
+                                }
+                              >
+                                Publish
+                              </button>
+                            </div>
+
+                            {/* Inline publish flow */}
+                            <Show when={publishCertId() === cert.id}>
+                              <div class="cert-inline" style={{ "margin-top": "0.5rem" }}>
+                                <p class="card-section-title" style={{ "margin-bottom": "0.5rem", "font-size": "0.8rem" }}>
+                                  Publish NIP-600 event
+                                </p>
+
+                                <Show when={!signedEvent()}>
+                                  <Show when={publishError()}>
+                                    <p class="error-text" style={{ "margin-bottom": "0.5rem" }}>{publishError()}</p>
+                                  </Show>
+                                  <button
+                                    type="button"
+                                    class="btn-primary"
+                                    style={{ width: "100%" }}
+                                    disabled={signing()}
+                                    onClick={() => handleSign(cert, bond)}
+                                  >
+                                    {signing() ? "Signing…" : "Sign with Nostr extension"}
+                                  </button>
+                                </Show>
+
+                                <Show when={signedEvent()}>
+                                  {(ev) => (
+                                    <>
+                                      <div class="status-pill paid" style={{ "margin-bottom": "0.75rem" }}>✓ Signed</div>
+                                      <pre class="event-json">{JSON.stringify(ev(), null, 2)}</pre>
+                                      <div class="field" style={{ "margin-top": "0.75rem" }}>
+                                        <label class="label">Relay URL</label>
+                                        <input
+                                          class="input"
+                                          type="url"
+                                          value={relayUrl()}
+                                          onInput={(e) => setRelayUrl(e.currentTarget.value)}
+                                          placeholder="wss://relay.example.com"
+                                        />
+                                      </div>
+                                      <button
+                                        type="button"
+                                        class="btn-primary"
+                                        style={{ width: "100%" }}
+                                        disabled={publishing()}
+                                        onClick={handlePublish}
+                                      >
+                                        {publishing() ? "Publishing…" : "Publish to relay"}
+                                      </button>
+                                      <Show when={publishResult()}>
+                                        <p
+                                          class={publishResult().startsWith("success:") ? "publish-success" : "publish-error"}
+                                          style={{ "margin-top": "0.5rem" }}
+                                        >
+                                          {publishResult().replace(/^(success|error):/, "")}
+                                        </p>
+                                      </Show>
+                                    </>
+                                  )}
+                                </Show>
+                              </div>
+                            </Show>
                           </div>
                         )}
                       </For>

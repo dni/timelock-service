@@ -109,7 +109,6 @@ export default function ImportPage() {
         tags: [
           ["d", beneficiary],
           ["p", beneficiary],
-          ["utxo", c.utxo],
           ["timelock_index", String(c.timelock_index)],
           ["expiry", String(c.expiry)],
           ["cert_sig", c.cert_sig],
@@ -240,13 +239,6 @@ export default function ImportPage() {
                   <dd>
                     <span class="mono-wrap break-all">{c().cert_sig}</span>
                     <CopyBtn value={c().cert_sig} id="sig" />
-                  </dd>
-                </div>
-                <div>
-                  <dt>UTXO <code class="tag">utxo</code></dt>
-                  <dd>
-                    <span class="mono-wrap">{c().utxo}</span>
-                    <CopyBtn value={c().utxo} id="utxo" />
                   </dd>
                 </div>
                 <div>

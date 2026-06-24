@@ -17,7 +17,6 @@ function b64ToBytes(b64: string): ArrayBuffer {
 export interface CertFields {
   beneficiary_pubkey: string;
   cert_sig: string;
-  utxo: string;
   timelock_index: number;
   expiry: number;
 }
