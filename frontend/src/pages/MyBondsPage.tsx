@@ -149,14 +149,23 @@ export default function MyBondsPage() {
                     <code class="mono-wrap address-display" style={{ "font-size": "0.72rem" }}>
                       {bond.address}
                     </code>
-                    <button
-                      type="button"
-                      class="btn-secondary"
-                      style={{ "margin-top": "0.4rem" }}
-                      onClick={() => navigator.clipboard.writeText(bond.address)}
-                    >
-                      Copy
-                    </button>
+                    <div style={{ display: "flex", gap: "0.5rem", "margin-top": "0.4rem" }}>
+                      <button
+                        type="button"
+                        class="btn-secondary"
+                        onClick={() => navigator.clipboard.writeText(bond.address)}
+                      >
+                        Copy
+                      </button>
+                      <a
+                        href={`https://mempool.space/address/${bond.address}`}
+                        target="_blank"
+                        rel="noopener"
+                        class="btn-secondary"
+                      >
+                        mempool.space ↗
+                      </a>
+                    </div>
                   </div>
 
                   {/* Certificate summary (read-only) */}
@@ -184,23 +193,21 @@ export default function MyBondsPage() {
                     </div>
                   </Show>
 
-                  <div class="button-row" style={{ "margin-top": "0.75rem" }}>
+                  <div style={{ display: "flex", gap: "0.5rem", "margin-top": "0.75rem" }}>
                     <button
                       type="button"
-                      class="btn-primary"
+                      class="btn-secondary"
+                      style={{ flex: 1 }}
                       onClick={() => navigate(`/my-bonds/${bond.id}`)}
                     >
                       Edit
                     </button>
-                    <a
-                      href={`https://mempool.space/address/${bond.address}`}
-                      target="_blank"
-                      rel="noopener"
+                    <button
+                      type="button"
                       class="btn-secondary"
+                      style={{ flex: 1 }}
+                      onClick={() => forget(bond.id)}
                     >
-                      mempool.space ↗
-                    </a>
-                    <button type="button" class="btn-secondary" onClick={() => forget(bond.id)}>
                       Remove
                     </button>
                   </div>
