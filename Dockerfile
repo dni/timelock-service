@@ -24,8 +24,6 @@ WORKDIR /app
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --no-dev --no-cache
 
-ENV PATH="/app/.venv/bin:$PATH"
-
 COPY backend/ .
 
 COPY --from=frontend-builder /build/dist /app/static
@@ -34,6 +32,6 @@ RUN mkdir -p /app/data
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", \
+CMD ["uv", "run", "--frozen", "--no-dev", "uvicorn", "app.main:app", \
      "--host", "0.0.0.0", "--port", "8000", \
      "--proxy-headers", "--forwarded-allow-ips=*"]

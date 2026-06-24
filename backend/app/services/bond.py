@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from urllib.parse import urlencode
 
 from lnurl.models import AesAction
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,12 @@ from app.services.lnbits import lnbits_client
 logger = logging.getLogger("uvicorn")
 
 _SERVER_KEY = bytes.fromhex(settings.preimage_encryption_key)
+
+
+def _payment_webhook_url() -> str:
+    base = settings.service_base_url.rstrip("/")
+    token = urlencode({"secret": settings.lnbits_webhook_secret})
+    return f"{base}/api/v1/webhook/payment?{token}"
 
 
 def _encrypt_preimage(r: bytes) -> str:
@@ -124,7 +131,7 @@ class BondService:
             memo=f"Fidelity bond certificate — {bond.name}",
             preimage_hex=preimage_r.hex(),
             expiry_seconds=settings.invoice_expiry_seconds,
-            webhook_url=f"{settings.service_base_url}/api/v1/webhook/payment",
+            webhook_url=_payment_webhook_url(),
         )
 
         await self.bonds.increment_used_slots(bond_id)
@@ -142,6 +149,7 @@ class BondService:
             lnbits_payment_hash=invoice_data["payment_hash"],
             expires_at=expires_at,
         )
+        order.bond = bond
         logger.info(f"Order {order.id} created for npub={npub_hex[:16]}... bond={bond_id}")
         return order
 

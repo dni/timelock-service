@@ -1,7 +1,8 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { useNavigate, useSearchParams } from "@solidjs/router";
-import { getOrder, requestBond, type Order } from "../api";
+import { getOrder, orderStatusWebSocketUrl, requestBond, type Order } from "../api";
 import { decryptCert, type CertFields } from "../crypto";
+import QRCodeCanvas from "../QRCode";
 
 type Step = "form" | "invoice" | "decrypt" | "done";
 
@@ -25,27 +26,49 @@ export default function OrderPage() {
     if (!bondId()) navigate("/");
   });
 
-  // Poll every 3 seconds while waiting for payment
+  // Watch this order over the service websocket while waiting for payment.
   createEffect(() => {
     if (step() !== "invoice") return;
     const o = order();
     if (!o) return;
 
-    const id = setInterval(async () => {
+    let closed = false;
+    const ws = new WebSocket(orderStatusWebSocketUrl(o.order_id));
+
+    ws.onmessage = (event) => {
       try {
-        const updated = await getOrder(o.order_id);
+        const updated = JSON.parse(event.data) as Order;
         setOrder(updated);
         if (updated.state === "PAID") {
           setStep("decrypt");
         } else if (updated.state === "EXPIRED") {
           setError("Invoice expired. Go back and try again.");
         }
-      } catch {
-        // transient errors are fine during polling
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
       }
-    }, 3000);
+    };
 
-    onCleanup(() => clearInterval(id));
+    ws.onclose = async () => {
+      if (closed || step() !== "invoice") return;
+      try {
+        const updated = await getOrder(o.order_id);
+        setOrder(updated);
+        if (updated.state === "PAID") setStep("decrypt");
+        if (updated.state === "EXPIRED") setError("Invoice expired. Go back and try again.");
+      } catch {
+        setError("Payment status connection closed. Refresh this page to check the order.");
+      }
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+
+    onCleanup(() => {
+      closed = true;
+      ws.close();
+    });
   });
 
   async function submitNpub(e: Event) {
@@ -175,12 +198,14 @@ export default function OrderPage() {
 
             <div class="invoice-block">
               <p class="label">Lightning Invoice</p>
+              <QRCodeCanvas value={o().invoice.toUpperCase()} label="Lightning invoice QR code" />
               <code class="mono-wrap">{o().invoice}</code>
               <CopyBtn value={o().invoice} id="invoice" />
             </div>
 
             <div class="invoice-block">
               <p class="label">LNURL</p>
+              <QRCodeCanvas value={o().lnurl} label="LNURL QR code" />
               <code class="mono-wrap">{o().lnurl}</code>
               <CopyBtn value={o().lnurl} id="lnurl" />
             </div>

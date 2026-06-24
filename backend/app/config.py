@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./data/timelock.db"
     preimage_encryption_key: str  # 64 hex chars (32 bytes)
     default_fee_rate: float = 0.10
-    invoice_expiry_seconds: int = 3600
+    invoice_expiry_seconds: int = 600
     min_bond_sats: int = 100_000
     service_base_url: str = "http://localhost:8000"
 

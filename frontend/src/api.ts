@@ -55,3 +55,8 @@ export const requestBond = (bond_id: string, npub: string) =>
 
 export const getOrder = (order_id: string) =>
   apiFetch<Order>(`/bond/${order_id}`);
+
+export function orderStatusWebSocketUrl(order_id: string) {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${protocol}//${window.location.host}${BASE}/bond/${order_id}/ws`;
+}

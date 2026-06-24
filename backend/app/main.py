@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import create_tables
 from app.endpoints import admin, bond, lnurl, tiers, webhook
-from app.jobs import order_expiry_job
+from app.jobs import lnbits_payment_websocket_job, order_expiry_job
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn")
@@ -21,13 +21,15 @@ async def lifespan(app: FastAPI):
     logger.info("Database tables ready")
 
     task_expiry = asyncio.create_task(order_expiry_job(interval_seconds=60))
+    task_lnbits_ws = asyncio.create_task(lnbits_payment_websocket_job())
     logger.info("Background jobs started")
 
     yield
 
-    task_expiry.cancel()
-    with suppress(asyncio.CancelledError):
-        await task_expiry
+    for task in (task_expiry, task_lnbits_ws):
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     logger.info("Background jobs stopped")
 
 

@@ -218,6 +218,20 @@ input[type="text"]::placeholder {
   gap: 0.5rem;
 }
 
+.qr-card {
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.75rem;
+  align-self: flex-start;
+  line-height: 0;
+}
+
+.qr-card canvas {
+  display: block;
+  width: min(240px, 100%);
+  height: auto;
+}
+
 .label {
   font-size: 0.78rem;
   text-transform: uppercase;
