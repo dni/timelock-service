@@ -2,7 +2,7 @@
 
 IMAGE_NAME = timelock-service
 CONTAINER_NAME = timelock-service
-PORT = 8000
+PORT = 6011
 
 build:
 	docker build --pull -t $(IMAGE_NAME) .
@@ -15,7 +15,7 @@ run:
 	docker stop $(CONTAINER_NAME) 2>/dev/null || true
 	docker rm $(CONTAINER_NAME) 2>/dev/null || true
 	docker run --restart always -d --name $(CONTAINER_NAME) \
-		--network host \
+		-p $(PORT):8000 \
 		--env-file .env \
 		-v $(PWD)/backend/data:/app/data \
 		$(IMAGE_NAME)
