@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.database import create_tables
-from app.endpoints import admin, bond, lnurl, tiers, webhook
+from app.endpoints import admin, bond, tiers, webhook
 from app.jobs import lnbits_payment_websocket_job, order_expiry_job
 
 logging.basicConfig(level=logging.INFO)
@@ -60,7 +60,6 @@ app.add_middleware(
 
 app.include_router(tiers.router)
 app.include_router(bond.router)
-app.include_router(lnurl.router)
 app.include_router(admin.router)
 app.include_router(webhook.router)
 

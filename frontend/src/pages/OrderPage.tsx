@@ -1,5 +1,6 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
-import { useNavigate, useSearchParams } from "@solidjs/router";
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router";
+import Footer from "../Footer";
 import { getOrder, getOrderPreimage, orderStatusWebSocketUrl, requestBond, type Order } from "../api";
 import { decryptCert, type CertFields } from "../crypto";
 import {
@@ -17,12 +18,13 @@ type Step = "form" | "invoice" | "decrypt" | "done";
 const DEFAULT_RELAY = "wss://relay.damus.io";
 
 export default function OrderPage() {
-  const [params] = useSearchParams();
+  const routeParams = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const bondId = () => (params.bond_id as string) ?? "";
-  const bondName = () => decodeURIComponent((params.bond_name as string) ?? "");
-  const orderId = () => (params.order_id as string) ?? "";
+  const orderId = () => routeParams.id ?? "";
+  const bondId = () => (searchParams.bond_id as string) ?? "";
+  const bondName = () => decodeURIComponent((searchParams.bond_name as string) ?? "");
 
   const [step, setStep] = createSignal<Step>("form");
   const [npub, setNpub] = createSignal("");
@@ -41,12 +43,12 @@ export default function OrderPage() {
   const [preimageSaveStatus, setPreimageSaveStatus] = createSignal("");
 
   createEffect(() => {
-    if (!bondId() && !orderId()) navigate("/");
+    if (!bondId() && !orderId()) navigate("/", { replace: true });
   });
 
   onMount(() => {
-    if (!orderId()) void prefillFromNostr();
     if (orderId()) void loadExistingOrder(orderId());
+    else void prefillFromNostr();
   });
 
   async function prefillFromNostr() {
@@ -77,7 +79,7 @@ export default function OrderPage() {
         setPreimageSaveStatus("Saved preimage loaded from this browser.");
       }
       if (existing.state === "PAID") {
-        if (savePreimage()) await savePaidPreimage(existing.order_id);
+        await savePaidPreimage(existing.order_id);
         setStep("decrypt");
       } else setStep("invoice");
     } catch (err) {
@@ -142,13 +144,12 @@ export default function OrderPage() {
     setLoading(true);
     try {
       const o = await requestBond(bondId(), npub());
-      setOrder(o);
       saveOrder({
         order_id: o.order_id,
         bond_name: bondName(),
         created_at: Math.floor(Date.now() / 1000),
       });
-      setStep("invoice");
+      navigate(`/order/${o.order_id}`, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -367,21 +368,6 @@ export default function OrderPage() {
               <CopyBtn value={o().invoice} id="invoice" />
             </div>
 
-            <div class="invoice-block">
-              <p class="label">LNURL</p>
-              <QRCodeCanvas value={o().lnurl} label="LNURL QR code" />
-              <code class="mono-wrap">{o().lnurl}</code>
-              <CopyBtn value={o().lnurl} id="lnurl" />
-            </div>
-
-            <Show when={o().lightning_address}>
-              <div class="invoice-block">
-                <p class="label">Lightning Address</p>
-                <code class="mono-wrap">{o().lightning_address}</code>
-                <CopyBtn value={o().lightning_address!} id="lna" />
-              </div>
-            </Show>
-
             <label class="toggle-row">
               <input
                 type="checkbox"
@@ -582,6 +568,7 @@ export default function OrderPage() {
           </>
         )}
       </Show>
+      <Footer />
     </div>
   );
 }

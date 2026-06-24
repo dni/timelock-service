@@ -1,4 +1,4 @@
-.PHONY: build run
+.PHONY: build run seed
 
 IMAGE_NAME = timelock-service
 CONTAINER_NAME = timelock-service
@@ -6,6 +6,9 @@ PORT = 8000
 
 build:
 	docker build --pull -t $(IMAGE_NAME) .
+
+seed:
+	cd backend && python seed_bonds.py
 
 run:
 	@echo "Restarting container..."

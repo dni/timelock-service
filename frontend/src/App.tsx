@@ -1,5 +1,6 @@
 import { Route, Router } from "@solidjs/router";
 import BondList from "./pages/BondList";
+import BondsPage from "./pages/BondsPage";
 import CertificatesPage from "./pages/CertificatesPage";
 import ImportPage from "./pages/ImportPage";
 import OrderPage from "./pages/OrderPage";
@@ -8,7 +9,9 @@ export default function App() {
   return (
     <Router>
       <Route path="/" component={BondList} />
-      <Route path="/order" component={OrderPage} />
+      <Route path="/bonds" component={BondsPage} />
+      <Route path="/order/new" component={OrderPage} />
+      <Route path="/order/:id" component={OrderPage} />
       <Route path="/certificates" component={CertificatesPage} />
       <Route path="/import" component={ImportPage} />
     </Router>

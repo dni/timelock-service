@@ -6,11 +6,10 @@ import os
 import time
 from urllib.parse import urlencode
 
-from lnurl.models import AesAction
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.crypto.aes import decrypt_bytes, decrypt_cert, encrypt_bytes, encrypt_cert, encrypt_lud10_success_action
+from app.crypto.aes import decrypt_bytes, decrypt_cert, encrypt_bytes, encrypt_cert
 from app.crypto.bip46 import derive_bond_from_xprv, next_available_index
 from app.crypto.certificate import sign_bond_cert
 from app.crypto.nostr import normalize_public_key
@@ -216,14 +215,6 @@ class BondService:
         if order.state != OrderState.PAID:
             raise ValueError("Order is not paid")
         return _decrypt_preimage(order.preimage_r_enc).hex()
-
-    async def build_lud10_success_action(self, order: BondOrder) -> AesAction:
-        if not order.encrypted_cert or not order.cert_nonce:
-            raise ValueError("Order has no encrypted certificate")
-        preimage_r = _decrypt_preimage(order.preimage_r_enc)
-        cert_json = decrypt_cert(order.encrypted_cert, order.cert_nonce, preimage_r)
-        ciphertext, iv = encrypt_lud10_success_action(cert_json, preimage_r)
-        return AesAction(description="NIP-600 fidelity bond certificate", ciphertext=ciphertext, iv=iv)
 
     async def expire_pending_orders(self) -> int:
         expired = await self.orders.get_expired_pending()

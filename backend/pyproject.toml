@@ -13,8 +13,6 @@ dependencies = [
     "coincurve>=20.0.0",
     "cryptography>=42.0.0",
     "bip46>=1.1.0",
-    "lnurl>=2.0.1",
-    "bech32>=1.2.0",
     "websockets>=16.0",
 ]
 

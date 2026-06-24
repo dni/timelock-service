@@ -1,11 +1,8 @@
 import asyncio
-from urllib.parse import urlparse
 
-from bech32 import bech32_encode, convertbits
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.database import async_session_maker, get_session
 from app.repository import OrderRepository
 from app.schemas import BondOrderResponse, BondRequestBody, BondStatusResponse
@@ -15,20 +12,6 @@ from app.services.lnbits import LightningNodeUnavailableError
 router = APIRouter(prefix="/api/v1/bond", tags=["bond"])
 
 
-def _lnurl_pay_url(order_id: str) -> str:
-    return f"{settings.service_base_url.rstrip('/')}/api/v1/lnurlp/{order_id}"
-
-
-def _lnurl(order_id: str) -> str:
-    data = convertbits(_lnurl_pay_url(order_id).encode("utf-8"), 8, 5, True)
-    return bech32_encode("lnurl", data).upper()
-
-
-def _lightning_address(order_id: str) -> str | None:
-    host = urlparse(settings.service_base_url).hostname
-    return f"{order_id}@{host}" if host else None
-
-
 def _order_status_response(order) -> BondStatusResponse:
     bond = order.bond
     return BondStatusResponse(
@@ -36,9 +19,6 @@ def _order_status_response(order) -> BondStatusResponse:
         state=order.state,
         beneficiary_pubkey=order.beneficiary_npub,
         invoice=order.payment_request,
-        lnurl=_lnurl(order.id),
-        lnurl_pay_url=_lnurl_pay_url(order.id),
-        lightning_address=_lightning_address(order.id),
         price_sats=order.price_sats,
         bond_sats=order.bond_sats,
         encrypted_cert=order.encrypted_cert,
@@ -67,9 +47,6 @@ async def request_bond(body: BondRequestBody, session: AsyncSession = Depends(ge
         state=order.state,
         beneficiary_pubkey=order.beneficiary_npub,
         invoice=order.payment_request,
-        lnurl=_lnurl(order.id),
-        lnurl_pay_url=_lnurl_pay_url(order.id),
-        lightning_address=_lightning_address(order.id),
         payment_hash=order.lnbits_payment_hash,
         price_sats=order.price_sats,
         bond_sats=order.bond_sats,

@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import Footer from "../Footer";
 import { decryptCert, type CertFields } from "../crypto";
 import {
   pubkeyHexFromInput,
@@ -323,6 +324,7 @@ export default function ImportPage() {
           </>
         )}
       </Show>
+      <Footer />
     </div>
   );
 }

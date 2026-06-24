@@ -1,5 +1,6 @@
 import { createResource, For, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
+import Footer from "../Footer";
 import { getOrder, type Order } from "../api";
 import { listSavedOrders, removeOrder, type SavedOrder } from "../orderHistory";
 
@@ -51,6 +52,13 @@ export default function CertificatesPage() {
       <header class="site-header compact">
         <h1>My Certificates</h1>
         <p class="subtitle">Order history saved in this browser.</p>
+        <button
+          type="button"
+          class="btn-secondary nav-action"
+          onClick={() => navigate("/import")}
+        >
+          Import Certificate
+        </button>
       </header>
 
       <Show when={items.loading}>
@@ -114,7 +122,7 @@ export default function CertificatesPage() {
                     <button
                       type="button"
                       class="btn-primary"
-                      onClick={() => navigate(`/order?order_id=${item.order_id}`)}
+                      onClick={() => navigate(`/order/${item.order_id}`)}
                     >
                       Open
                     </button>
@@ -132,6 +140,7 @@ export default function CertificatesPage() {
           </div>
         </Show>
       </Show>
+      <Footer />
     </div>
   );
 }

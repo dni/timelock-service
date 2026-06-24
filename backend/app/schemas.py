@@ -30,9 +30,6 @@ class BondOrderResponse(BaseModel):
     state: str
     beneficiary_pubkey: str
     invoice: str
-    lnurl: str
-    lnurl_pay_url: str
-    lightning_address: str | None
     payment_hash: str
     price_sats: int
     bond_sats: int
@@ -50,9 +47,6 @@ class BondStatusResponse(BaseModel):
     state: str
     beneficiary_pubkey: str
     invoice: str
-    lnurl: str
-    lnurl_pay_url: str
-    lightning_address: str | None
     price_sats: int
     bond_sats: int
     encrypted_cert: str | None

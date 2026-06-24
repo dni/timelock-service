@@ -18,9 +18,6 @@ export interface Order {
   state: "PENDING_PAYMENT" | "PAID" | "EXPIRED";
   beneficiary_pubkey: string;
   invoice: string;
-  lnurl: string;
-  lnurl_pay_url: string;
-  lightning_address: string | null;
   payment_hash: string;
   price_sats: number;
   bond_sats: number;
