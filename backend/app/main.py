@@ -1,9 +1,11 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.database import create_tables
 from app.endpoints import admin, bond, lnurl, tiers, webhook
@@ -53,3 +55,8 @@ app.include_router(webhook.router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+_STATIC = Path("/app/static")
+if _STATIC.exists():
+    app.mount("/", StaticFiles(directory=str(_STATIC), html=True), name="frontend")

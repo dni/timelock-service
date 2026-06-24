@@ -1,3 +1,4 @@
+# backend
 .env
 data/
 .venv/
@@ -6,6 +7,8 @@ __pycache__/
 *.pyo
 .pytest_cache/
 *.egg-info/
+
+# frontend
+node_modules/
 dist/
 build/
-uv.lock

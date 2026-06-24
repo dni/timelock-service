@@ -24,33 +24,6 @@ payment, the user copies the preimage from their wallet into the browser. The
 browser decrypts the certificate locally, then the user can publish their own
 NIP-600 event.
 
-## Repository Layout
-
-```text
-app/
-  main.py              FastAPI app, routing, startup job
-  config.py            Environment-based settings
-  database.py          Async SQLAlchemy engine/session setup
-  models.py            SQLAlchemy models (Bond, BondOrder)
-  repository.py        Database access layer
-  endpoints/
-    admin.py           Admin CRUD for bonds and orders
-    bond.py            Public bond request and status endpoints
-    tiers.py           Public bond listing endpoint
-    lnurl.py           LNURL-pay and Lightning address endpoints
-    webhook.py         LNbits payment webhook
-  services/
-    bond.py            Bond and order orchestration
-    lnbits.py          LNbits HTTP client
-  crypto/
-    bip46.py           BIP46 timelocked address derivation
-    certificate.py     NIP-600 certificate signing
-    aes.py             AES-256-GCM (cert storage) and LUD-10 AES-CBC helpers
-    nostr.py           Nostr pubkey normalization
-tests/                 BIP46, certificate, AES, and Nostr helper tests
-pyproject.toml         Python project metadata and dependencies
-```
-
 ## Requirements
 
 - Python 3.12+
